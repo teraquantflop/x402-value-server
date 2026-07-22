@@ -1,0 +1,55 @@
+{
+  "name": "x402-value-server",
+  "version": "1.0.0",
+  "description": "Production-ready x402 server offering Black-Scholes option pricing and Greeks (USDC on Base + Solana)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "client": "tsx clients/test-client.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "x402",
+    "black-scholes",
+    "options",
+    "greeks",
+    "usdc",
+    "base",
+    "solana",
+    "express"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@scure/base": "^1.2.6",
+    "@solana/kit": "^5.5.1",
+    "@x402/core": "2.19.0",
+    "@x402/evm": "2.19.0",
+    "@x402/express": "2.19.0",
+    "@x402/extensions": "2.19.0",
+    "@x402/fetch": "2.19.0",
+    "@x402/svm": "2.19.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "viem": "^2.23.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}
