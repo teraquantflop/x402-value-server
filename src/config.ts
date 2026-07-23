@@ -234,8 +234,8 @@ function loadConfig(): AppConfig {
     idempotencyTtlMs: env.IDEMPOTENCY_TTL_MS,
     trustProxy: Boolean(env.TRUST_PROXY),
     skipPayment,
-    serviceName: "x402-black-scholes",
-    serviceVersion: "1.0.0",
+    serviceName: "x402-derivatives-desk",
+    serviceVersion: "1.1.0",
   };
 }
 

@@ -1,6 +1,10 @@
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import type { AppConfig } from "../types.js";
-import { payToForNetwork, isSvmNetworkId } from "../config.js";
+import { payToForNetwork } from "../config.js";
+import {
+  optionPriceDiscovery,
+  volatilitySurfaceDiscovery,
+} from "../discovery/catalog.js";
 import {
   OPTION_EXAMPLE_INPUT,
   OPTION_EXAMPLE_OUTPUT,
@@ -14,17 +18,6 @@ import {
   volatilitySurfaceOutputJsonSchema,
 } from "../schemas/volatility.js";
 
-function chainLabels(config: AppConfig): string {
-  return config.networks
-    .map((n) => {
-      if (n === "solana") return "Solana mainnet";
-      if (n === "solana-devnet") return "Solana devnet";
-      if (n === "base") return "Base mainnet";
-      return "Base Sepolia";
-    })
-    .join(" / ");
-}
-
 function acceptsForPrice(config: AppConfig, price: string) {
   return config.networkIds.map((network) => ({
     scheme: "exact" as const,
@@ -34,26 +27,21 @@ function acceptsForPrice(config: AppConfig, price: string) {
   }));
 }
 
-function bazaarTags(config: AppConfig, extra: string[]): string[] {
-  const chain = config.networkIds.some(isSvmNetworkId) ? "solana" : "base";
-  const tags = [...extra, chain, "usdc"].slice(0, 5);
-  return tags;
-}
-
 /**
  * x402 paid-route configuration with full Bazaar discovery metadata.
- * Add new paid endpoints here and wire handlers in routes/.
+ * Descriptions/tags come from the discovery catalog (agent-oriented).
  */
 export function buildPaidRoutes(config: AppConfig) {
-  const chains = chainLabels(config);
+  const optionMeta = optionPriceDiscovery(config);
+  const surfaceMeta = volatilitySurfaceDiscovery(config);
 
   return {
     "POST /v1/option/price": {
       accepts: acceptsForPrice(config, config.priceDollarString),
-      description: `Black-Scholes-Merton European option price and Greeks (delta, gamma, vega, theta, rho). USDC exact payment on ${chains}.`,
-      mimeType: "application/json",
-      serviceName: "BS Option Greeks",
-      tags: bazaarTags(config, ["options", "greeks", "black-scholes"]),
+      description: optionMeta.description,
+      mimeType: optionMeta.mimeType,
+      serviceName: optionMeta.serviceName,
+      tags: optionMeta.tags,
       extensions: {
         ...declareDiscoveryExtension({
           bodyType: "json",
@@ -75,11 +63,10 @@ export function buildPaidRoutes(config: AppConfig) {
 
     "POST /v1/volatility/surface": {
       accepts: acceptsForPrice(config, config.priceVolSurfaceDollarString),
-      description:
-        `Implied volatility surface from market premiums: shared rate/yield + options[{underlying,strike,T,type,premium}]. Returns IV grid, per-option IV+Greeks, fit quality, stats. USDC on ${chains}.`,
-      mimeType: "application/json",
-      serviceName: "IV Surface",
-      tags: bazaarTags(config, ["options", "iv", "volatility", "surface"]),
+      description: surfaceMeta.description,
+      mimeType: surfaceMeta.mimeType,
+      serviceName: surfaceMeta.serviceName,
+      tags: surfaceMeta.tags,
       extensions: {
         ...declareDiscoveryExtension({
           bodyType: "json",
@@ -93,7 +80,10 @@ export function buildPaidRoutes(config: AppConfig) {
           },
           output: {
             example: VOL_SURFACE_EXAMPLE_OUTPUT,
-            schema: volatilitySurfaceOutputJsonSchema as Record<string, unknown>,
+            schema: volatilitySurfaceOutputJsonSchema as Record<
+              string,
+              unknown
+            >,
           },
         }),
       },

@@ -46,6 +46,7 @@ export const volatilitySurfaceInputSchema = z
 
 export type VolatilitySurfaceInput = z.infer<typeof volatilitySurfaceInputSchema>;
 
+/** Bazaar / docs example — multi-maturity underlyings (e.g. forward marks). */
 export const VOL_SURFACE_EXAMPLE_INPUT = {
   rate: 0.05,
   dividendYield: 0,
@@ -125,48 +126,60 @@ export const VOL_SURFACE_EXAMPLE_OUTPUT = {
 
 export const volatilitySurfaceInputJsonSchema = {
   type: "object",
+  title: "ImpliedVolatilitySurfaceRequest",
+  description:
+    "Build an IV surface from a market option book. Share funding rate and yield; attach each quote's own underlying (supports different forward marks by maturity — common in power, gas, and commodity curves).",
   properties: {
     rate: {
       type: "number",
-      description: "Shared continuous risk-free rate r",
+      description:
+        "Shared continuous risk-free / discount rate r for the book (e.g. 0.05 = 5%).",
+      examples: [0.03, 0.05],
     },
     dividendYield: {
       type: "number",
-      description: "Shared continuous dividend yield q (optional, default 0)",
+      description:
+        "Shared continuous yield q (default 0): equity dividends, FX foreign rate, or commodity convenience yield as appropriate.",
       minimum: 0,
+      examples: [0, 0.01],
     },
     options: {
       type: "array",
       description:
-        "One entry per (underlying, strike, maturity, type) with its market premium",
+        "Market quotes: one object per (underlying, strike, maturity, type) with observed premium. Prefer unique keys per cell; duplicates average into the grid.",
       minItems: 1,
       maxItems: 200,
       items: {
         type: "object",
+        title: "MarketOptionQuote",
         properties: {
           underlying: {
             type: "number",
             description:
-              "Underlying price S for this option (> 0); may differ by maturity",
+              "Underlying level S for this quote (> 0). May differ by maturity (e.g. monthly power/gas forwards).",
             exclusiveMinimum: 0,
+            examples: [100, 82.5],
           },
           strike: {
             type: "number",
-            description: "Strike K (> 0)",
+            description: "Strike K (> 0) in same units as underlying.",
             exclusiveMinimum: 0,
           },
           timeToExpiry: {
             type: "number",
-            description: "Time to expiry in years T (>= 0)",
+            description: "Year-fraction to expiry T (≥ 0).",
             minimum: 0,
+            examples: [0.25, 0.5, 1.0],
           },
           optionType: {
             type: "string",
             enum: ["call", "put"],
+            description: "European call or put.",
           },
           premium: {
             type: "number",
-            description: "Market option premium (>= 0)",
+            description:
+              "Observed market premium (≥ 0) in underlying currency units.",
             minimum: 0,
           },
         },
@@ -187,15 +200,28 @@ export const volatilitySurfaceInputJsonSchema = {
 
 export const volatilitySurfaceOutputJsonSchema = {
   type: "object",
+  title: "ImpliedVolatilitySurfaceResponse",
+  description:
+    "Strike×maturity IV grid, per-quote IV and Greeks, fit diagnostics, and solver stats for agent risk and market-making pipelines.",
   properties: {
     surface: {
       type: "object",
+      description: "Dense IV grid derived from successful inversions",
       properties: {
-        strikes: { type: "array", items: { type: "number" } },
-        maturities: { type: "array", items: { type: "number" } },
+        strikes: {
+          type: "array",
+          items: { type: "number" },
+          description: "Sorted unique strikes from the book",
+        },
+        maturities: {
+          type: "array",
+          items: { type: "number" },
+          description: "Sorted unique year-fraction maturities",
+        },
         impliedVols: {
           type: "array",
-          description: "Grid [strikeIndex][maturityIndex]; null if empty",
+          description:
+            "Grid [strikeIndex][maturityIndex]; null where no successful quote mapped",
           items: {
             type: "array",
             items: { type: ["number", "null"] },
@@ -206,14 +232,67 @@ export const volatilitySurfaceOutputJsonSchema = {
     },
     market: {
       type: "object",
+      description: "Echo of shared rate and yield",
       properties: {
         rate: { type: "number" },
         dividendYield: { type: "number" },
       },
     },
-    points: { type: "array" },
-    fit: { type: "object" },
-    stats: { type: "object" },
+    points: {
+      type: "array",
+      description:
+        "Per-input quote results: IV, Greeks, model price vs premium, status",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "integer" },
+          underlying: { type: "number" },
+          strike: { type: "number" },
+          timeToExpiry: { type: "number" },
+          optionType: { type: "string", enum: ["call", "put"] },
+          premium: { type: "number" },
+          impliedVol: {
+            type: ["number", "null"],
+            description: "Solved annualized IV or null if failed",
+          },
+          greeks: {
+            type: ["object", "null"],
+            description: "Analytic Greeks at solved IV (null if failed)",
+          },
+          modelPrice: { type: ["number", "null"] },
+          priceError: {
+            type: ["number", "null"],
+            description: "modelPrice − premium",
+          },
+          status: { type: "string", enum: ["ok", "failed"] },
+          reason: {
+            type: "string",
+            description: "Failure reason when status=failed",
+          },
+        },
+      },
+    },
+    fit: {
+      type: "object",
+      description: "Book-level inversion quality metrics",
+      properties: {
+        okCount: { type: "integer" },
+        failedCount: { type: "integer" },
+        meanAbsPriceError: { type: ["number", "null"] },
+        maxAbsPriceError: { type: ["number", "null"] },
+        rmsePriceError: { type: ["number", "null"] },
+      },
+    },
+    stats: {
+      type: "object",
+      description: "Compute telemetry for agents (latency, solver id)",
+      properties: {
+        optionCount: { type: "integer" },
+        elapsedMs: { type: "number" },
+        solver: { type: "string", const: "fastImpliedVol" },
+        avgIterations: { type: "number" },
+      },
+    },
     requestId: { type: "string" },
     computedAt: { type: "string" },
   },

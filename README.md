@@ -1,33 +1,34 @@
-# x402 Value Server — Black-Scholes Options
+# x402 Derivatives Analytics Desk
 
-Production-ready **HTTP 402 (x402)** API that sells **Black-Scholes-Merton** European option prices and full **Greeks** (delta, gamma, vega, theta, rho). Built with **TypeScript + Express** and the latest scoped **`@x402/*`** packages.
+Production **HTTP 402 (x402)** quant API for **AI agents** in equities, commodities, power/energy, and crypto: European **Black-Scholes-Merton** pricing, full **Greeks**, and **implied-volatility surfaces**. TypeScript + Express + `@x402/*`.
 
-Agents and clients discover the endpoint via **Bazaar** metadata, pay **USDC** on **Base**, and receive a JSON result — no API keys or accounts.
+Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** per call, and get JSON — **no API keys or accounts**.
 
 ## Features
 
-- **POST `/v1/option/price`** — paid option calculator (exact scheme, USDC)
-- **Base Sepolia** / **Base mainnet** + **Solana mainnet** / **Solana devnet** (USDC, exact scheme)
-- Configurable price **$0.01–$0.10** (default `$0.05`)
-- Facilitator via env (public test **`https://x402.org/facilitator`**, PayAI for Solana/Base mainnet, CDP optional)
-- Full **Bazaar discovery** (`declareDiscoveryExtension` input/output schemas)
-- **Idempotent** responses (`Idempotency-Key` header)
-- Security: helmet, CORS, rate limits, strict Zod validation, no server private keys
+- **POST `/v1/option/price`** — fair value + delta/gamma/vega/theta/rho (risk, hedging, trading)
+- **POST `/v1/volatility/surface`** — invert market premiums → IV grid + per-quote Greeks (multi-maturity underlyings)
+- Settlement: **Base** / **Base Sepolia** / **Solana** mainnet & devnet (USDC, exact scheme)
+- Configurable micropayments **$0.01–$0.10** per endpoint
+- **Rich Bazaar discovery** (descriptions, tags, input/output schemas, examples)
+- Machine-readable **service card** at `GET /` (capabilities, use cases, markets)
+- **Idempotent** retries (`Idempotency-Key`), helmet/CORS/rate limits, Zod validation
 - Simple **test client** (`npm run client`)
 
 ## Architecture
 
 ```
-Client / Agent
-    │  HTTP 402 → sign payment → retry
+Agent / Client
+    │  GET / (discover) → POST paid path → 402 → pay USDC → 200 JSON
     ▼
 Express
   free:  GET /  ·  GET /health
-  paid:  POST /v1/option/price   ← paymentMiddleware (@x402/express)
+  paid:  POST /v1/option/price
+         POST /v1/volatility/surface   ← paymentMiddleware (@x402/express)
            │
            ├─ Zod validation
            ├─ Idempotency cache
-           └─ Black-Scholes-Merton service
+           └─ BSM / IV surface services
                     │
                     ▼
          HTTPFacilitatorClient → FACILITATOR_URL
@@ -112,7 +113,7 @@ Liveness + active networks / facilitator.
 
 ### `GET /` (free)
 
-Service card for humans and agents (endpoints, price, discovery flags).
+**Primary discovery document** for agents: product pitch, capabilities, markets (equities / commodities / power / crypto), use cases, pricing, settlement networks, paid endpoint catalog with tags and agent hints, plus request/response examples.
 
 ### Pricing
 
@@ -272,21 +273,37 @@ import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 > **Fail-fast:** the server rejects routes the facilitator does not support (e.g.
 > `NETWORKS=solana` with `https://x402.org/facilitator`).
 
-## Bazaar discovery
+## Bazaar discovery (agent catalog)
 
-Paid routes register `@x402/extensions/bazaar` via `declareDiscoveryExtension` in `src/x402/routeConfig.ts`:
+Metadata lives in **`src/discovery/catalog.ts`** and is applied in `src/x402/routeConfig.ts` via `declareDiscoveryExtension`.
 
-- Example **input** body agents can copy
-- JSON Schema for parameters
-- Example **output** + schema for price + Greeks
+| Layer | What agents get |
+|-------|------------------|
+| **Service** | Name, tagline, capabilities, markets, use cases (`GET /`) |
+| **Route** | `serviceName`, `description` (≤500), `tags` (≤5), mimeType |
+| **Bazaar extension** | Example input body, JSON Schema properties with finance-oriented descriptions, example output + schema |
 
-Indexing notes (CDP Bazaar / compatible facilitators):
+### Paid tools
 
-- Crawlers expect **HTTP 402** on unpaid discovery probes
-- Keep `description` ≤ **500** characters
-- After at least one successful settle through a Bazaar-capable facilitator, the resource can appear in discovery listings
+| Endpoint | Bazaar name | Agent value |
+|----------|-------------|-------------|
+| `POST /v1/option/price` | BSM Price+Greeks | Single-contract fair value + hedge ratios |
+| `POST /v1/volatility/surface` | IV Surface Desk | Book → IV grid + Greeks for MM / risk |
 
-List resources (buyer side example):
+### Indexing notes
+
+- Unpaid POST to a paid path must return **HTTP 402** with `PAYMENT-REQUIRED` (and `extensions.bazaar`)
+- Facilitator soft-limits: description ≤ **500** chars; `serviceName` ≤ **32**; ≤ **5** tags
+- After a successful settle on a Bazaar-capable facilitator, resources can appear in discovery listings
+
+### How agents should call
+
+1. `GET /` — choose endpoint by capability / use case  
+2. Unpaid POST — parse `PAYMENT-REQUIRED` (base64) for price, network, payTo, schemas  
+3. Pay USDC via x402 client (`@x402/fetch` + EVM/SVM scheme)  
+4. Retry with payment; optional `Idempotency-Key`
+
+List resources (buyer side):
 
 ```ts
 import { HTTPFacilitatorClient } from "@x402/core/http";
@@ -296,6 +313,7 @@ const client = withBazaar(
   new HTTPFacilitatorClient({ url: process.env.FACILITATOR_URL! }),
 );
 const { items } = await client.extensions.bazaar.listResources({ type: "http" });
+// Filter by tags/description: options, greeks, volatility, commodities, …
 ```
 
 ## Wallet notes

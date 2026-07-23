@@ -1,12 +1,22 @@
 import { Router } from "express";
 import { config } from "../config.js";
+import { buildServiceCard, SERVICE_CATALOG } from "../discovery/catalog.js";
+import {
+  OPTION_EXAMPLE_INPUT,
+  OPTION_EXAMPLE_OUTPUT,
+} from "../schemas/option.js";
+import {
+  VOL_SURFACE_EXAMPLE_INPUT,
+  VOL_SURFACE_EXAMPLE_OUTPUT,
+} from "../schemas/volatility.js";
 
 export const healthRouter = Router();
 
 healthRouter.get("/health", (_req, res) => {
   res.status(200).json({
     status: "ok",
-    service: config.serviceName,
+    service: SERVICE_CATALOG.serviceName,
+    productName: SERVICE_CATALOG.productName,
     version: config.serviceVersion,
     networks: config.networks,
     networkIds: config.networkIds,
@@ -15,86 +25,24 @@ healthRouter.get("/health", (_req, res) => {
       optionPrice: config.priceDollarString,
       volatilitySurface: config.priceVolSurfaceDollarString,
     },
+    capabilities: SERVICE_CATALOG.capabilities,
     timestamp: new Date().toISOString(),
   });
 });
 
 healthRouter.get("/", (_req, res) => {
+  const card = buildServiceCard(config);
   res.status(200).json({
-    service: config.serviceName,
-    version: config.serviceVersion,
-    description:
-      "x402-paid Black-Scholes option pricing, Greeks, and implied volatility surfaces.",
-    prices: {
-      optionPrice: config.priceDollarString,
-      volatilitySurface: config.priceVolSurfaceDollarString,
-    },
-    networks: config.networks.map((alias, i) => ({
-      alias,
-      caip2: config.networkIds[i],
-      asset: "USDC",
-      scheme: "exact",
-    })),
-    facilitator: config.facilitatorUrl,
-    endpoints: {
-      free: [
-        { method: "GET", path: "/health", description: "Liveness probe" },
-        { method: "GET", path: "/", description: "Service card" },
-      ],
-      paid: [
-        {
-          method: "POST",
-          path: "/v1/option/price",
-          description:
-            "Compute European option price and Greeks from spot, strike, T, r, σ, type",
-          price: config.priceDollarString,
-          mimeType: "application/json",
-        },
-        {
-          method: "POST",
-          path: "/v1/volatility/surface",
-          description:
-            "Implied vol surface from market premiums (shared rate/q; per-option underlying)",
-          price: config.priceVolSurfaceDollarString,
-          mimeType: "application/json",
-        },
-      ],
-    },
-    discovery: {
-      bazaar: true,
-      note: "Paid routes declare @x402/extensions/bazaar metadata for agent discovery.",
-    },
-    docs: {
-      optionPriceExample: {
-        spot: 100,
-        strike: 100,
-        timeToExpiry: 1,
-        rate: 0.05,
-        volatility: 0.2,
-        optionType: "call",
-        dividendYield: 0,
+    ...card,
+    examples: {
+      optionPrice: {
+        request: OPTION_EXAMPLE_INPUT,
+        response: OPTION_EXAMPLE_OUTPUT,
       },
-      volatilitySurfaceExample: {
-        rate: 0.05,
-        dividendYield: 0,
-        options: [
-          {
-            underlying: 100,
-            strike: 90,
-            timeToExpiry: 0.25,
-            optionType: "call",
-            premium: 12.5,
-          },
-          {
-            underlying: 102,
-            strike: 100,
-            timeToExpiry: 0.5,
-            optionType: "call",
-            premium: 8.7,
-          },
-        ],
+      volatilitySurface: {
+        request: VOL_SURFACE_EXAMPLE_INPUT,
+        response: VOL_SURFACE_EXAMPLE_OUTPUT,
       },
     },
-    baseUrl: config.publicBaseUrl,
   });
 });
