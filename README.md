@@ -52,7 +52,9 @@ Edit `.env`:
 | `PAY_TO_EVM_ADDRESS` / `PAY_TO_SVM_ADDRESS` | Optional when enabling both chain families |
 | `NETWORKS` | `base-sepolia` \| `base` \| `solana` \| `solana-devnet` |
 | `FACILITATOR_URL` | Must support every network in `NETWORKS` |
-| `PRICE_USD` | `0.01`–`0.10` (default `0.05`) |
+| `PRICE_USD` | Single option `/v1/option/price` — `0.01`–`0.10` (default `0.05`) |
+| `PRICE_VOL_SURFACE_USD` | Surface `/v1/volatility/surface` — `0.01`–`0.10` (default `0.10`) |
+| `MAX_SURFACE_OPTIONS` | Max options per surface request (default `200`) |
 
 The server **never** needs a private key — only the receiving address(es).
 
@@ -72,6 +74,14 @@ curl -s -X POST http://localhost:4021/v1/option/price \
   -d '{"spot":100,"strike":100,"timeToExpiry":1,"rate":0.05,"volatility":0.2,"optionType":"call"}' \
   -D -
 # Expect HTTP 402 + PAYMENT-REQUIRED header
+
+curl -s -X POST http://localhost:4021/v1/volatility/surface \
+  -H 'Content-Type: application/json' \
+  -d '{"rate":0.05,"dividendYield":0,"options":[{"underlying":100,"strike":90,"timeToExpiry":0.25,"optionType":"call","premium":12.5},{"underlying":102,"strike":100,"timeToExpiry":0.5,"optionType":"call","premium":8.7}]}' \
+  -D -
+# Expect HTTP 402 (default $0.10)
+# Body explains payment_required; full terms are in the PAYMENT-REQUIRED header (base64).
+# To exercise the compute path without USDC locally: SKIP_PAYMENT=1 npm run dev
 ```
 
 ### 5. Paid test client
@@ -103,6 +113,13 @@ Liveness + active networks / facilitator.
 ### `GET /` (free)
 
 Service card for humans and agents (endpoints, price, discovery flags).
+
+### Pricing
+
+| Endpoint | Env | Default |
+|----------|-----|---------|
+| `POST /v1/option/price` | `PRICE_USD` | `$0.05` |
+| `POST /v1/volatility/surface` | `PRICE_VOL_SURFACE_USD` | `$0.10` |
 
 ### `POST /v1/option/price` (paid · x402 exact · USDC)
 
@@ -163,6 +180,44 @@ Service card for humans and agents (endpoints, price, discovery flags).
 - European Black-Scholes-Merton with continuous dividend yield
 - Greeks use standard analytic formulas
 - **Vega / theta / rho** are raw derivatives (per 1.0 vol, per year, per 1.0 rate) — not the “per 1% / per day” trading-desk scalings
+
+### `POST /v1/volatility/surface` (paid · x402 exact · USDC · default `$0.10`)
+
+Invert a book of market premiums into an implied-vol surface, per-option IV + Greeks, fit quality, and compute stats.
+
+**Request** — shared `rate` / `dividendYield`; each option has its own `underlying` (can differ by maturity):
+
+```json
+{
+  "rate": 0.05,
+  "dividendYield": 0,
+  "options": [
+    { "underlying": 100, "strike": 90, "timeToExpiry": 0.25, "optionType": "call", "premium": 12.5 },
+    { "underlying": 102, "strike": 100, "timeToExpiry": 0.5, "optionType": "call", "premium": 8.7 }
+  ]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `rate` | yes | Shared continuous risk-free rate \(r\) |
+| `dividendYield` | no | Shared continuous yield \(q\) (default `0`) |
+| `options` | yes | 1–`MAX_SURFACE_OPTIONS` rows |
+| `options[].underlying` | yes | Underlying \(S > 0\) for this option (may differ by maturity) |
+| `options[].strike` | yes | Strike \(K > 0\) |
+| `options[].timeToExpiry` | yes | Years to expiry \(T \ge 0\) |
+| `options[].optionType` | yes | `"call"` or `"put"` |
+| `options[].premium` | yes | Market premium \(\ge 0\) |
+
+**Response `200` (shape)**
+
+- `surface.strikes` / `surface.maturities` — grid axes derived from inputs  
+- `surface.impliedVols[i][j]` — IV at strike i, maturity j (`null` if empty)  
+- `points[]` — per-option IV, Greeks, model price, error, status  
+- `fit` — ok/failed counts and price-error metrics  
+- `stats` — timing, option count, `solver: "fastImpliedVol"`  
+
+IV inversion uses an internal black-box solver (`fastImpliedVol`); iteration details are not exposed.
 
 ## Networks & facilitator
 

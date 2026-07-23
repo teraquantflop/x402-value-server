@@ -61,6 +61,11 @@ export interface AppConfig {
   payToSvm?: string;
   priceUsd: number;
   priceDollarString: string;
+  /** Paid price for /v1/volatility/surface */
+  priceVolSurfaceUsd: number;
+  priceVolSurfaceDollarString: string;
+  /** Max options accepted per surface request */
+  maxSurfaceOptions: number;
   networks: NetworkAlias[];
   networkIds: NetworkId[];
   facilitatorUrl: string;
@@ -70,6 +75,8 @@ export interface AppConfig {
   rateLimitMax: number;
   idempotencyTtlMs: number;
   trustProxy: boolean;
+  /** When true, skip x402 payment gate (local/debug only — never enable in production). */
+  skipPayment: boolean;
   serviceName: string;
   serviceVersion: string;
 }

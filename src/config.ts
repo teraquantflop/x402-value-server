@@ -74,6 +74,17 @@ const envSchema = z.object({
     .min(0.01, "PRICE_USD must be >= 0.01")
     .max(0.1, "PRICE_USD must be <= 0.10")
     .default(0.05),
+  PRICE_VOL_SURFACE_USD: z.coerce
+    .number()
+    .min(0.01, "PRICE_VOL_SURFACE_USD must be >= 0.01")
+    .max(0.1, "PRICE_VOL_SURFACE_USD must be <= 0.10")
+    .default(0.1),
+  MAX_SURFACE_OPTIONS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .default(200),
   NETWORKS: z.string().default("base-sepolia"),
   FACILITATOR_URL: z.string().url().default("https://x402.org/facilitator"),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:4021"),
@@ -82,6 +93,11 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   IDEMPOTENCY_TTL_MS: z.coerce.number().int().positive().default(300_000),
   TRUST_PROXY: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
+  /** Local/debug only: skip x402 payment middleware. Forbidden when NODE_ENV=production. */
+  SKIP_PAYMENT: z
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
@@ -113,8 +129,8 @@ function parseNetworks(raw: string): NetworkAlias[] {
 }
 
 function formatPriceDollar(priceUsd: number): string {
-  const fixed = priceUsd.toFixed(4).replace(/\.?0+$/, "");
-  return `$${fixed}`;
+  // USDC prices in this app are cent-level ($0.01–$0.10); always two decimals
+  return `$${priceUsd.toFixed(2)}`;
 }
 
 function resolvePayTos(
@@ -190,6 +206,13 @@ function loadConfig(): AppConfig {
           .map((s) => s.trim())
           .filter(Boolean);
 
+  const skipPayment = Boolean(env.SKIP_PAYMENT);
+  if (skipPayment && env.NODE_ENV === "production") {
+    throw new Error(
+      "SKIP_PAYMENT cannot be enabled when NODE_ENV=production",
+    );
+  }
+
   return {
     port: env.PORT,
     nodeEnv: env.NODE_ENV,
@@ -198,6 +221,9 @@ function loadConfig(): AppConfig {
     payToSvm,
     priceUsd: env.PRICE_USD,
     priceDollarString: formatPriceDollar(env.PRICE_USD),
+    priceVolSurfaceUsd: env.PRICE_VOL_SURFACE_USD,
+    priceVolSurfaceDollarString: formatPriceDollar(env.PRICE_VOL_SURFACE_USD),
+    maxSurfaceOptions: env.MAX_SURFACE_OPTIONS,
     networks,
     networkIds,
     facilitatorUrl: env.FACILITATOR_URL.replace(/\/$/, ""),
@@ -207,6 +233,7 @@ function loadConfig(): AppConfig {
     rateLimitMax: env.RATE_LIMIT_MAX,
     idempotencyTtlMs: env.IDEMPOTENCY_TTL_MS,
     trustProxy: Boolean(env.TRUST_PROXY),
+    skipPayment,
     serviceName: "x402-black-scholes",
     serviceVersion: "1.0.0",
   };

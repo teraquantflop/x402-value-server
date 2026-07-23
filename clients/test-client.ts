@@ -39,6 +39,34 @@ const SAMPLE_BODY = {
   dividendYield: 0,
 };
 
+const SAMPLE_SURFACE_BODY = {
+  rate: 0.05,
+  dividendYield: 0,
+  options: [
+    {
+      underlying: 100,
+      strike: 90,
+      timeToExpiry: 0.25,
+      optionType: "call" as const,
+      premium: 12.5,
+    },
+    {
+      underlying: 102,
+      strike: 100,
+      timeToExpiry: 0.5,
+      optionType: "call" as const,
+      premium: 8.7,
+    },
+    {
+      underlying: 101,
+      strike: 110,
+      timeToExpiry: 1.0,
+      optionType: "put" as const,
+      premium: 9.1,
+    },
+  ],
+};
+
 interface AcceptRequirement {
   scheme?: string;
   network?: string;
@@ -172,7 +200,29 @@ async function main() {
     }
   }
 
-  const accepts = paymentRequired?.accepts ?? [];
+  // 2b) Unpaid surface endpoint
+  const unpaidSurface = await fetch(`${SERVER_URL}/v1/volatility/surface`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(SAMPLE_SURFACE_BODY),
+  });
+  console.log(
+    "\nPOST /v1/volatility/surface (no payment) →",
+    unpaidSurface.status,
+  );
+  const surfacePrHeader =
+    unpaidSurface.headers.get("PAYMENT-REQUIRED") ??
+    unpaidSurface.headers.get("payment-required");
+  const surfacePr = decodePaymentRequired(surfacePrHeader);
+  if (surfacePr?.accepts?.length) {
+    for (const a of surfacePr.accepts) {
+      console.log(
+        `    - ${a.network} scheme=${a.scheme} amount=${a.amount} payTo=${a.payTo}`,
+      );
+    }
+  }
+
+  const accepts = paymentRequired?.accepts ?? surfacePr?.accepts ?? [];
   const hasSvmKey = Boolean(process.env.SVM_PRIVATE_KEY?.trim());
   const hasEvmKey = Boolean(process.env.EVM_PRIVATE_KEY?.trim());
 
@@ -267,6 +317,38 @@ async function main() {
     "Idempotent-Replay:",
     replay.headers.get("Idempotent-Replay"),
   );
+
+  // 5) Paid volatility surface (higher price)
+  console.log("\nPaying for POST /v1/volatility/surface …");
+  const paidSurface = await fetchWithPayment(
+    `${SERVER_URL}/v1/volatility/surface`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(SAMPLE_SURFACE_BODY),
+    },
+  );
+  const surfaceResult = await httpClient.processResponse(paidSurface);
+  console.log(
+    "\nPOST /v1/volatility/surface (paid) →",
+    paidSurface.status,
+  );
+  console.log("  paymentStatus:", surfaceResult.paymentStatus);
+  if (paidSurface.status === 200) {
+    console.log(
+      "  body (truncated):",
+      JSON.stringify(surfaceResult.body, null, 2).slice(0, 1200),
+    );
+  } else if (paidSurface.status === 402) {
+    const failHeader =
+      paidSurface.headers.get("PAYMENT-REQUIRED") ??
+      paidSurface.headers.get("payment-required");
+    console.error(
+      "  surface payment failed:",
+      decodePaymentRequired(failHeader)?.error ?? "(unknown)",
+    );
+    process.exitCode = 2;
+  }
 }
 
 main().catch((err) => {

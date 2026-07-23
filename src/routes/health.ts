@@ -11,7 +11,10 @@ healthRouter.get("/health", (_req, res) => {
     networks: config.networks,
     networkIds: config.networkIds,
     facilitator: config.facilitatorUrl,
-    price: config.priceDollarString,
+    prices: {
+      optionPrice: config.priceDollarString,
+      volatilitySurface: config.priceVolSurfaceDollarString,
+    },
     timestamp: new Date().toISOString(),
   });
 });
@@ -21,8 +24,11 @@ healthRouter.get("/", (_req, res) => {
     service: config.serviceName,
     version: config.serviceVersion,
     description:
-      "x402-paid Black-Scholes-Merton option pricing with full Greeks (delta, gamma, vega, theta, rho).",
-    price: config.priceDollarString,
+      "x402-paid Black-Scholes option pricing, Greeks, and implied volatility surfaces.",
+    prices: {
+      optionPrice: config.priceDollarString,
+      volatilitySurface: config.priceVolSurfaceDollarString,
+    },
     networks: config.networks.map((alias, i) => ({
       alias,
       caip2: config.networkIds[i],
@@ -44,6 +50,14 @@ healthRouter.get("/", (_req, res) => {
           price: config.priceDollarString,
           mimeType: "application/json",
         },
+        {
+          method: "POST",
+          path: "/v1/volatility/surface",
+          description:
+            "Implied vol surface from market premiums (shared rate/q; per-option underlying)",
+          price: config.priceVolSurfaceDollarString,
+          mimeType: "application/json",
+        },
       ],
     },
     discovery: {
@@ -51,7 +65,7 @@ healthRouter.get("/", (_req, res) => {
       note: "Paid routes declare @x402/extensions/bazaar metadata for agent discovery.",
     },
     docs: {
-      inputExample: {
+      optionPriceExample: {
         spot: 100,
         strike: 100,
         timeToExpiry: 1,
@@ -59,6 +73,26 @@ healthRouter.get("/", (_req, res) => {
         volatility: 0.2,
         optionType: "call",
         dividendYield: 0,
+      },
+      volatilitySurfaceExample: {
+        rate: 0.05,
+        dividendYield: 0,
+        options: [
+          {
+            underlying: 100,
+            strike: 90,
+            timeToExpiry: 0.25,
+            optionType: "call",
+            premium: 12.5,
+          },
+          {
+            underlying: 102,
+            strike: 100,
+            timeToExpiry: 0.5,
+            optionType: "call",
+            premium: 8.7,
+          },
+        ],
       },
     },
     baseUrl: config.publicBaseUrl,

@@ -19,7 +19,14 @@ function printBanner(): void {
   );
   console.log(`  facilitator:  ${config.facilitatorUrl}`);
   console.log(`  public URL:   ${config.publicBaseUrl}`);
-  console.log(`  paid route:   POST /v1/option/price`);
+  console.log(
+    `  prices:       option=${config.priceDollarString} surface=${config.priceVolSurfaceDollarString}`,
+  );
+  console.log(`  paid routes:  POST /v1/option/price`);
+  console.log(`                POST /v1/volatility/surface`);
+  if (config.skipPayment) {
+    console.warn(`  SKIP_PAYMENT: enabled (no x402 gate)`);
+  }
 }
 
 function explainStartupError(err: unknown): void {
