@@ -22,6 +22,10 @@ function printBanner(): void {
   console.log(
     `  prices:       option=${config.priceDollarString} surface=${config.priceVolSurfaceDollarString}`,
   );
+  console.log(`  free routes:  GET /`);
+  console.log(`                GET /health`);
+  console.log(`                GET /.well-known/x402`);
+  console.log(`                GET /.well-known/x402.json`);
   console.log(`  paid routes:  POST /v1/option/price`);
   console.log(`                POST /v1/volatility/surface`);
   if (config.skipPayment) {

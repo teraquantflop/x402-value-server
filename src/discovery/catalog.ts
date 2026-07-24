@@ -175,6 +175,16 @@ export function buildServiceCard(config: AppConfig) {
           description:
             "Machine-readable service card: capabilities, use cases, endpoint catalog, examples",
         },
+        {
+          method: "GET",
+          path: "/.well-known/x402",
+          description: "x402 well-known discovery manifest (JSON)",
+        },
+        {
+          method: "GET",
+          path: "/.well-known/x402.json",
+          description: "x402 well-known discovery manifest (JSON, alias)",
+        },
       ],
       paid: [
         {
@@ -205,7 +215,73 @@ export function buildServiceCard(config: AppConfig) {
       howToDiscover:
         "Unpaid POST to a paid path returns HTTP 402 with PAYMENT-REQUIRED (base64). Extensions.bazaar carries input/output schemas for agent tooling.",
       paymentHeader: "PAYMENT-REQUIRED",
+      wellKnown: ["/.well-known/x402", "/.well-known/x402.json"],
     },
     baseUrl: config.publicBaseUrl,
+  };
+}
+
+/**
+ * Machine-friendly x402 discovery document for:
+ *   GET /.well-known/x402
+ *   GET /.well-known/x402.json
+ *
+ * Subset of the service card plus absolute resource URLs and protocol fields
+ * commonly used by agents / crawlers looking for an x402 manifest.
+ */
+export function buildWellKnownX402(config: AppConfig) {
+  const card = buildServiceCard(config);
+  const base = config.publicBaseUrl.replace(/\/$/, "");
+
+  const resources = card.endpoints.paid.map((ep) => {
+    const [method, path] = ep.path.includes(" ")
+      ? (ep.path.split(" ") as [string, string])
+      : ["POST", ep.path];
+    return {
+      type: "http" as const,
+      method,
+      path,
+      url: `${base}${path.startsWith("/") ? path : `/${path}`}`,
+      description: ep.description,
+      price: ep.price,
+      mimeType: ep.mimeType,
+      serviceName: ep.serviceName,
+      tags: ep.tags,
+      scheme: "exact" as const,
+      asset: "USDC",
+    };
+  });
+
+  return {
+    x402Version: 2,
+    protocol: "x402",
+    name: card.service,
+    productName: card.productName,
+    version: card.version,
+    tagline: card.tagline,
+    description: card.description,
+    url: base,
+    capabilities: card.capabilities,
+    useCases: card.useCases,
+    markets: card.markets,
+    resources,
+    pricing: card.pricing,
+    settlement: {
+      scheme: "exact",
+      asset: "USDC",
+      networks: card.settlement.networks,
+      facilitator: card.settlement.facilitator,
+      payTo: card.settlement.payTo,
+    },
+    links: {
+      serviceCard: `${base}/`,
+      health: `${base}/health`,
+      wellKnown: `${base}/.well-known/x402.json`,
+    },
+    discovery: {
+      bazaar: true,
+      paymentHeader: "PAYMENT-REQUIRED",
+      note: "Unpaid requests to resources return HTTP 402. Payment terms are in the PAYMENT-REQUIRED header (base64 JSON).",
+    },
   };
 }

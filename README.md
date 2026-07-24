@@ -22,7 +22,7 @@ Agent / Client
     │  GET / (discover) → POST paid path → 402 → pay USDC → 200 JSON
     ▼
 Express
-  free:  GET /  ·  GET /health
+  free:  GET /  ·  GET /health  ·  GET /.well-known/x402(.json)
   paid:  POST /v1/option/price
          POST /v1/volatility/surface   ← paymentMiddleware (@x402/express)
            │
@@ -115,6 +115,16 @@ Liveness + active networks / facilitator.
 
 **Primary discovery document** for agents: product pitch, capabilities, markets (equities / commodities / power / crypto), use cases, pricing, settlement networks, paid endpoint catalog with tags and agent hints, plus request/response examples.
 
+### `GET /.well-known/x402` and `GET /.well-known/x402.json` (free)
+
+Machine-readable **x402 discovery manifest** (same JSON for both paths):
+
+- `x402Version`, `protocol`, service name/description
+- `resources[]` — paid HTTP endpoints with absolute `url`, method, price, tags
+- `settlement` — USDC, networks (CAIP-2), facilitator, payTo
+- `links` — service card, health, well-known
+
+Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.well-known/x402.json` for explicit JSON content-type consumers; both return `application/json`.
 ### Pricing
 
 | Endpoint | Env | Default |

@@ -235,7 +235,7 @@ function loadConfig(): AppConfig {
     trustProxy: Boolean(env.TRUST_PROXY),
     skipPayment,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.1.0",
+    serviceVersion: "1.1.1",
   };
 }
 
