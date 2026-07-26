@@ -137,6 +137,10 @@ Liveness + active networks / facilitator.
 
 Full **OpenAPI 3.1** document (`Content-Type: application/json`). Same file as repo-root `openapi.json`. Listed in service card free endpoints and well-known `links.openapi`.
 
+Discovery/free operations are marked with `"security": []` so x402 scanners do not expect HTTP 402 on `/`, `/health`, `/openapi.json`, or `/.well-known/x402(.json)`. Paid `/v1/*` operations declare the `x402` security scheme.
+
+*(Optional later: favicon at `/favicon.ico` for browsers that probe it — not required for agents.)*
+
 ### `GET /.well-known/x402` and `GET /.well-known/x402.json` (free)
 
 Machine-readable **x402 discovery manifest** (same JSON for both paths):
