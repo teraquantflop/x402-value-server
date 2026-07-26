@@ -109,6 +109,30 @@
         }
       }
     },
+    "/llms.txt": {
+      "get": {
+        "operationId": "getLlmsTxt",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "llms.txt agent discovery document",
+        "description": "Concise Markdown summary for AI agents (llms.txt convention): capabilities, paid endpoints, discovery links. Free — no payment required.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "llms.txt Markdown as text/plain",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/.well-known/x402": {
       "get": {
         "operationId": "getWellKnownX402",

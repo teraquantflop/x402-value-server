@@ -327,6 +327,12 @@ export function buildServiceCard(config: AppConfig) {
           path: "/openapi.json",
           description: "OpenAPI 3.1 specification for all endpoints",
         },
+        {
+          method: "GET",
+          path: "/llms.txt",
+          description:
+            "Agent-oriented Markdown summary (llms.txt convention): capabilities, paid endpoints, discovery links",
+        },
       ],
       paid: [
         {
@@ -453,6 +459,7 @@ export function buildWellKnownX402(config: AppConfig) {
       health: `${base}/health`,
       wellKnown: `${base}/.well-known/x402.json`,
       openapi: `${base}/openapi.json`,
+      llmsTxt: `${base}/llms.txt`,
     },
     discovery: {
       bazaar: true,

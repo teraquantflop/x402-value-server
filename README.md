@@ -26,7 +26,7 @@ Agent / Client
     │  GET / (discover) → POST paid path → 402 → pay USDC → 200 JSON
     ▼
 Express
-  free:  GET /  ·  GET /health  ·  GET /openapi.json  ·  GET /.well-known/x402(.json)
+  free:  GET /  ·  GET /health  ·  GET /openapi.json  ·  GET /llms.txt  ·  GET /.well-known/x402(.json)
   paid:  POST /v1/option/price
          POST /v1/option/implied-vol
          POST /v1/volatility/surface
@@ -137,7 +137,11 @@ Liveness + active networks / facilitator.
 
 Full **OpenAPI 3.1** document (`Content-Type: application/json`). Same file as repo-root `openapi.json`. Listed in service card free endpoints and well-known `links.openapi`.
 
-Discovery/free operations are marked with `"security": []` so x402 scanners do not expect HTTP 402 on `/`, `/health`, `/openapi.json`, or `/.well-known/x402(.json)`. Paid `/v1/*` operations declare the `x402` security scheme.
+### `GET /llms.txt` (free)
+
+Concise **Markdown** summary for AI agents ([llms.txt](https://llmstxt.org) convention): service overview, capabilities, paid endpoints with prices, dual Solana/Base settlement, and links to OpenAPI / well-known / health / service card. `Content-Type: text/plain; charset=utf-8`.
+
+Discovery/free operations are marked with `"security": []` so x402 scanners do not expect HTTP 402 on `/`, `/health`, `/openapi.json`, `/llms.txt`, or `/.well-known/x402(.json)`. Paid `/v1/*` operations declare the `x402` security scheme.
 
 *(Optional later: favicon at `/favicon.ico` for browsers that probe it — not required for agents.)*
 

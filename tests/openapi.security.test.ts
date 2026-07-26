@@ -20,6 +20,7 @@ const FREE_PATHS = [
   "/",
   "/health",
   "/openapi.json",
+  "/llms.txt",
   "/.well-known/x402",
   "/.well-known/x402.json",
 ] as const;
