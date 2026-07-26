@@ -6,9 +6,21 @@ import {
   OPTION_EXAMPLE_OUTPUT,
 } from "../schemas/option.js";
 import {
+  IMPLIED_VOL_EXAMPLE_INPUT,
+  IMPLIED_VOL_EXAMPLE_OUTPUT,
+} from "../schemas/impliedVol.js";
+import {
   VOL_SURFACE_EXAMPLE_INPUT,
   VOL_SURFACE_EXAMPLE_OUTPUT,
 } from "../schemas/volatility.js";
+import {
+  PORTFOLIO_GREEKS_EXAMPLE_INPUT,
+  PORTFOLIO_SCENARIO_EXAMPLE_INPUT,
+} from "../schemas/portfolio.js";
+import {
+  aggregatePortfolio,
+  runPortfolioScenarios,
+} from "../services/portfolio.js";
 
 export const healthRouter = Router();
 
@@ -21,9 +33,15 @@ healthRouter.get("/health", (_req, res) => {
     networks: config.networks,
     networkIds: config.networkIds,
     facilitator: config.facilitatorUrl,
+    payTo: config.payToAddress,
+    payToEvm: config.payToEvm,
+    payToSvm: config.payToSvm,
     prices: {
       optionPrice: config.priceDollarString,
+      impliedVol: config.priceImpliedVolDollarString,
       volatilitySurface: config.priceVolSurfaceDollarString,
+      portfolioGreeks: config.pricePortfolioGreeksDollarString,
+      portfolioScenario: config.pricePortfolioScenarioDollarString,
     },
     capabilities: SERVICE_CATALOG.capabilities,
     timestamp: new Date().toISOString(),
@@ -32,6 +50,20 @@ healthRouter.get("/health", (_req, res) => {
 
 healthRouter.get("/", (_req, res) => {
   const card = buildServiceCard(config);
+
+  const greeksSnap = aggregatePortfolio(
+    PORTFOLIO_GREEKS_EXAMPLE_INPUT.rate,
+    PORTFOLIO_GREEKS_EXAMPLE_INPUT.dividendYield,
+    PORTFOLIO_GREEKS_EXAMPLE_INPUT.positions,
+    PORTFOLIO_GREEKS_EXAMPLE_INPUT.includeDollarGreeks,
+  );
+  const scenarioResult = runPortfolioScenarios(
+    PORTFOLIO_SCENARIO_EXAMPLE_INPUT.rate,
+    PORTFOLIO_SCENARIO_EXAMPLE_INPUT.dividendYield,
+    PORTFOLIO_SCENARIO_EXAMPLE_INPUT.positions,
+    PORTFOLIO_SCENARIO_EXAMPLE_INPUT.scenarios,
+  );
+
   res.status(200).json({
     ...card,
     examples: {
@@ -39,9 +71,38 @@ healthRouter.get("/", (_req, res) => {
         request: OPTION_EXAMPLE_INPUT,
         response: OPTION_EXAMPLE_OUTPUT,
       },
+      impliedVol: {
+        request: IMPLIED_VOL_EXAMPLE_INPUT,
+        response: IMPLIED_VOL_EXAMPLE_OUTPUT,
+      },
       volatilitySurface: {
         request: VOL_SURFACE_EXAMPLE_INPUT,
         response: VOL_SURFACE_EXAMPLE_OUTPUT,
+      },
+      portfolioGreeks: {
+        request: PORTFOLIO_GREEKS_EXAMPLE_INPUT,
+        response: {
+          net: {
+            mtm: greeksSnap.mtm,
+            greeks: greeksSnap.greeks,
+            dollarGreeks: greeksSnap.dollarGreeks,
+          },
+          legs: greeksSnap.legs,
+          positionCount: PORTFOLIO_GREEKS_EXAMPLE_INPUT.positions.length,
+          requestId: "00000000-0000-4000-8000-000000000004",
+          computedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+      portfolioScenario: {
+        request: PORTFOLIO_SCENARIO_EXAMPLE_INPUT,
+        response: {
+          base: scenarioResult.base,
+          scenarios: scenarioResult.scenarios,
+          positionCount: PORTFOLIO_SCENARIO_EXAMPLE_INPUT.positions.length,
+          scenarioCount: PORTFOLIO_SCENARIO_EXAMPLE_INPUT.scenarios.length,
+          requestId: "00000000-0000-4000-8000-000000000005",
+          computedAt: "2026-01-01T00:00:00.000Z",
+        },
       },
     },
   });

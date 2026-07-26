@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isEvmAddress,
+  isEvmNetworkId,
   isSvmAddress,
   isSvmNetworkId,
   NETWORK_MAP,
@@ -11,6 +12,12 @@ describe("address detection", () => {
     expect(isEvmAddress("0x1111111111111111111111111111111111111111")).toBe(
       true,
     );
+  });
+
+  it("accepts production Base payTo", () => {
+    expect(
+      isEvmAddress("0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f"),
+    ).toBe(true);
   });
 
   it("accepts Solana base58 addresses", () => {
@@ -33,14 +40,20 @@ describe("network map", () => {
     );
   });
 
+  it("maps base alias to Base mainnet CAIP-2", () => {
+    expect(NETWORK_MAP.base).toBe("eip155:8453");
+  });
+
   it("maps solana-devnet alias", () => {
     expect(NETWORK_MAP["solana-devnet"]).toBe(
       "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     );
   });
 
-  it("detects SVM network ids", () => {
+  it("detects SVM and EVM network ids", () => {
     expect(isSvmNetworkId(NETWORK_MAP.solana)).toBe(true);
     expect(isSvmNetworkId(NETWORK_MAP.base)).toBe(false);
+    expect(isEvmNetworkId(NETWORK_MAP.base)).toBe(true);
+    expect(isEvmNetworkId(NETWORK_MAP.solana)).toBe(false);
   });
 });

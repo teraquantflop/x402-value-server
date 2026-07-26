@@ -50,6 +50,15 @@ describe("well-known x402 HTTP", () => {
     expect(
       body.resources.some((r) => r.path === "/v1/volatility/surface"),
     ).toBe(true);
+    expect(
+      body.resources.some((r) => r.path === "/v1/option/implied-vol"),
+    ).toBe(true);
+    expect(
+      body.resources.some((r) => r.path === "/v1/portfolio/greeks"),
+    ).toBe(true);
+    expect(
+      body.resources.some((r) => r.path === "/v1/portfolio/scenario"),
+    ).toBe(true);
   });
 
   it("GET /.well-known/x402 matches .json alias", async () => {

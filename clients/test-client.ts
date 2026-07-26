@@ -109,10 +109,26 @@ async function buildX402Client(accepts: AcceptRequirement[]): Promise<{
   const client = new x402Client();
   const labels: string[] = [];
 
-  const wantSvm = needsSvm(accepts) || Boolean(process.env.SVM_PRIVATE_KEY);
-  const wantEvm = needsEvm(accepts) || Boolean(process.env.EVM_PRIVATE_KEY);
+  const serverWantsSvm = needsSvm(accepts);
+  const serverWantsEvm = needsEvm(accepts);
+  const hasSvmKey = Boolean(process.env.SVM_PRIVATE_KEY?.trim());
+  const hasEvmKey = Boolean(process.env.EVM_PRIVATE_KEY?.trim());
 
-  if (wantSvm && process.env.SVM_PRIVATE_KEY) {
+  // Dual-network 402: pay on ANY offered chain the buyer can settle.
+  // Single-network 402: that chain's key is required.
+  const canSvm = serverWantsSvm && hasSvmKey;
+  const canEvm = serverWantsEvm && hasEvmKey;
+
+  if (!canSvm && !canEvm) {
+    const needed: string[] = [];
+    if (serverWantsSvm) needed.push("SVM_PRIVATE_KEY (Solana)");
+    if (serverWantsEvm) needed.push("EVM_PRIVATE_KEY (Base/EVM)");
+    throw new Error(
+      `Cannot pay any offered network. Set at least one of: ${needed.join(" or ")}`,
+    );
+  }
+
+  if (canSvm && process.env.SVM_PRIVATE_KEY) {
     const raw = process.env.SVM_PRIVATE_KEY.trim();
     const secretBytes = base58.decode(raw);
     if (secretBytes.length !== 64) {
@@ -126,29 +142,11 @@ async function buildX402Client(accepts: AcceptRequirement[]): Promise<{
     labels.push(`Solana buyer ${keypair.address}`);
   }
 
-  if (wantEvm && process.env.EVM_PRIVATE_KEY) {
+  if (canEvm && process.env.EVM_PRIVATE_KEY) {
     const pk = process.env.EVM_PRIVATE_KEY.trim() as `0x${string}`;
     const account = privateKeyToAccount(pk);
     client.register("eip155:*", new ExactEvmScheme(account));
     labels.push(`EVM buyer ${account.address}`);
-  }
-
-  if (labels.length === 0) {
-    throw new Error(
-      "No buyer keys available. Set SVM_PRIVATE_KEY and/or EVM_PRIVATE_KEY in .env",
-    );
-  }
-
-  // Hard fail if 402 requires a chain we cannot pay
-  if (needsSvm(accepts) && !process.env.SVM_PRIVATE_KEY) {
-    throw new Error(
-      "Server requires Solana payment but SVM_PRIVATE_KEY is not set",
-    );
-  }
-  if (needsEvm(accepts) && !process.env.EVM_PRIVATE_KEY) {
-    throw new Error(
-      "Server requires EVM payment but EVM_PRIVATE_KEY is not set",
-    );
   }
 
   return { client, labels };

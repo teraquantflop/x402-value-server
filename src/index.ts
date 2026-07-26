@@ -6,28 +6,43 @@ function printBanner(): void {
     `[${config.serviceName}] v${config.serviceVersion} listening on :${config.port}`,
   );
   console.log(`  env:          ${config.nodeEnv}`);
-  console.log(`  payTo:        ${config.payToAddress}`);
-  if (config.payToEvm && config.payToEvm !== config.payToAddress) {
-    console.log(`  payTo (EVM):  ${config.payToEvm}`);
-  }
-  if (config.payToSvm && config.payToSvm !== config.payToAddress) {
-    console.log(`  payTo (SVM):  ${config.payToSvm}`);
-  }
-  console.log(`  price:        ${config.priceDollarString}`);
   console.log(
     `  networks:     ${config.networks.join(", ")} (${config.networkIds.join(", ")})`,
   );
+  console.log(`  payTo:        ${config.payToAddress}`);
+  if (config.payToSvm) {
+    console.log(`  payTo (SVM):  ${config.payToSvm}`);
+  }
+  if (config.payToEvm) {
+    console.log(`  payTo (EVM):  ${config.payToEvm}`);
+  }
+  console.log(`  price:        ${config.priceDollarString}`);
   console.log(`  facilitator:  ${config.facilitatorUrl}`);
   console.log(`  public URL:   ${config.publicBaseUrl}`);
   console.log(
-    `  prices:       option=${config.priceDollarString} surface=${config.priceVolSurfaceDollarString}`,
+    `  prices:       option=${config.priceDollarString}` +
+      ` impliedVol=${config.priceImpliedVolDollarString}` +
+      ` surface=${config.priceVolSurfaceDollarString}` +
+      ` portfolioGreeks=${config.pricePortfolioGreeksDollarString}` +
+      ` portfolioScenario=${config.pricePortfolioScenarioDollarString}`,
   );
   console.log(`  free routes:  GET /`);
   console.log(`                GET /health`);
   console.log(`                GET /.well-known/x402`);
   console.log(`                GET /.well-known/x402.json`);
-  console.log(`  paid routes:  POST /v1/option/price`);
-  console.log(`                POST /v1/volatility/surface`);
+  console.log(`  paid routes:  POST /v1/option/price          ${config.priceDollarString}`);
+  console.log(
+    `                POST /v1/option/implied-vol    ${config.priceImpliedVolDollarString}`,
+  );
+  console.log(
+    `                POST /v1/volatility/surface    ${config.priceVolSurfaceDollarString}`,
+  );
+  console.log(
+    `                POST /v1/portfolio/greeks      ${config.pricePortfolioGreeksDollarString}`,
+  );
+  console.log(
+    `                POST /v1/portfolio/scenario    ${config.pricePortfolioScenarioDollarString}`,
+  );
   if (config.skipPayment) {
     console.warn(`  SKIP_PAYMENT: enabled (no x402 gate)`);
   }

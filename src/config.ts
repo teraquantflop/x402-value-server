@@ -72,19 +72,41 @@ const envSchema = z.object({
   PRICE_USD: z.coerce
     .number()
     .min(0.01, "PRICE_USD must be >= 0.01")
-    .max(0.1, "PRICE_USD must be <= 0.10")
+    .max(1, "PRICE_USD must be <= 1.00")
     .default(0.05),
   PRICE_VOL_SURFACE_USD: z.coerce
     .number()
     .min(0.01, "PRICE_VOL_SURFACE_USD must be >= 0.01")
-    .max(0.1, "PRICE_VOL_SURFACE_USD must be <= 0.10")
+    .max(1, "PRICE_VOL_SURFACE_USD must be <= 1.00")
     .default(0.1),
+  PRICE_IMPLIED_VOL_USD: z.coerce
+    .number()
+    .min(0.01)
+    .max(1)
+    .default(0.03),
+  PRICE_PORTFOLIO_GREEKS_USD: z.coerce
+    .number()
+    .min(0.01)
+    .max(1)
+    .default(0.15),
+  PRICE_PORTFOLIO_SCENARIO_USD: z.coerce
+    .number()
+    .min(0.01)
+    .max(1)
+    .default(0.25),
   MAX_SURFACE_OPTIONS: z.coerce
     .number()
     .int()
     .min(1)
     .max(500)
     .default(200),
+  MAX_PORTFOLIO_POSITIONS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .default(100),
+  MAX_SCENARIOS: z.coerce.number().int().min(1).max(100).default(20),
   NETWORKS: z.string().default("base-sepolia"),
   FACILITATOR_URL: z.string().url().default("https://x402.org/facilitator"),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:4021"),
@@ -223,7 +245,19 @@ function loadConfig(): AppConfig {
     priceDollarString: formatPriceDollar(env.PRICE_USD),
     priceVolSurfaceUsd: env.PRICE_VOL_SURFACE_USD,
     priceVolSurfaceDollarString: formatPriceDollar(env.PRICE_VOL_SURFACE_USD),
+    priceImpliedVolUsd: env.PRICE_IMPLIED_VOL_USD,
+    priceImpliedVolDollarString: formatPriceDollar(env.PRICE_IMPLIED_VOL_USD),
+    pricePortfolioGreeksUsd: env.PRICE_PORTFOLIO_GREEKS_USD,
+    pricePortfolioGreeksDollarString: formatPriceDollar(
+      env.PRICE_PORTFOLIO_GREEKS_USD,
+    ),
+    pricePortfolioScenarioUsd: env.PRICE_PORTFOLIO_SCENARIO_USD,
+    pricePortfolioScenarioDollarString: formatPriceDollar(
+      env.PRICE_PORTFOLIO_SCENARIO_USD,
+    ),
     maxSurfaceOptions: env.MAX_SURFACE_OPTIONS,
+    maxPortfolioPositions: env.MAX_PORTFOLIO_POSITIONS,
+    maxScenarios: env.MAX_SCENARIOS,
     networks,
     networkIds,
     facilitatorUrl: env.FACILITATOR_URL.replace(/\/$/, ""),
@@ -235,7 +269,7 @@ function loadConfig(): AppConfig {
     trustProxy: Boolean(env.TRUST_PROXY),
     skipPayment,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.1.1",
+    serviceVersion: "1.3.0",
   };
 }
 

@@ -12,11 +12,14 @@ describe("buildWellKnownX402", () => {
     expect(doc.settlement.asset).toBe("USDC");
     expect(doc.settlement.facilitator).toBe(config.facilitatorUrl);
     expect(doc.settlement.payTo).toBe(config.payToAddress);
-    expect(doc.resources.length).toBeGreaterThanOrEqual(2);
+    expect(doc.resources.length).toBeGreaterThanOrEqual(5);
 
     const paths = doc.resources.map((r) => r.path);
     expect(paths).toContain("/v1/option/price");
+    expect(paths).toContain("/v1/option/implied-vol");
     expect(paths).toContain("/v1/volatility/surface");
+    expect(paths).toContain("/v1/portfolio/greeks");
+    expect(paths).toContain("/v1/portfolio/scenario");
 
     for (const r of doc.resources) {
       expect(r.type).toBe("http");

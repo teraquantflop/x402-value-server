@@ -1,15 +1,19 @@
 # x402 Derivatives Analytics Desk
 
-Production **HTTP 402 (x402)** quant API for **AI agents** in equities, commodities, power/energy, and crypto: European **Black-Scholes-Merton** pricing, full **Greeks**, and **implied-volatility surfaces**. TypeScript + Express + `@x402/*`.
+Production **HTTP 402 (x402)** quant API for **AI agents** in equities, commodities, power/energy, and crypto: European **Black-Scholes-Merton** pricing, full **Greeks**, single-premium **IV**, **IV surfaces**, **portfolio net Greeks**, and **scenario reprice**. TypeScript + Express + `@x402/*`.
 
 Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** per call, and get JSON — **no API keys or accounts**.
 
 ## Features
 
 - **POST `/v1/option/price`** — fair value + delta/gamma/vega/theta/rho (risk, hedging, trading)
+- **POST `/v1/option/implied-vol`** — solve σ̂ from one market premium + full Greeks (`fastImpliedVol`)
 - **POST `/v1/volatility/surface`** — invert market premiums → IV grid + per-quote Greeks (multi-maturity underlyings)
-- Settlement: **Base** / **Base Sepolia** / **Solana** mainnet & devnet (USDC, exact scheme)
-- Configurable micropayments **$0.01–$0.10** per endpoint
+- **POST `/v1/portfolio/greeks`** — net MTM + Greeks for multi-leg books (long/short via signed quantity)
+- **POST `/v1/portfolio/scenario`** — base + shocked MTM/Greeks under spot/vol/time scenarios
+- Settlement: **Solana mainnet + Base mainnet** dual USDC (exact) via PayAI; also Base Sepolia / Solana Devnet for test
+- 402 challenges list **one accept per network** — clients pay on Solana **or** Base
+- Configurable micropayments **$0.01–$1.00** per endpoint
 - **Rich Bazaar discovery** (descriptions, tags, input/output schemas, examples)
 - Machine-readable **service card** at `GET /` (capabilities, use cases, markets)
 - **Idempotent** retries (`Idempotency-Key`), helmet/CORS/rate limits, Zod validation
@@ -24,11 +28,14 @@ Agent / Client
 Express
   free:  GET /  ·  GET /health  ·  GET /.well-known/x402(.json)
   paid:  POST /v1/option/price
-         POST /v1/volatility/surface   ← paymentMiddleware (@x402/express)
+         POST /v1/option/implied-vol
+         POST /v1/volatility/surface
+         POST /v1/portfolio/greeks
+         POST /v1/portfolio/scenario   ← paymentMiddleware (@x402/express)
            │
            ├─ Zod validation
            ├─ Idempotency cache
-           └─ BSM / IV surface services
+           └─ BSM / IV / portfolio services
                     │
                     ▼
          HTTPFacilitatorClient → FACILITATOR_URL
@@ -49,13 +56,19 @@ Edit `.env`:
 
 | Variable | Notes |
 |----------|--------|
-| `PAY_TO_ADDRESS` | Receiving wallet: EVM `0x…` **or** Solana base58 (public only) |
-| `PAY_TO_EVM_ADDRESS` / `PAY_TO_SVM_ADDRESS` | Optional when enabling both chain families |
-| `NETWORKS` | `base-sepolia` \| `base` \| `solana` \| `solana-devnet` |
-| `FACILITATOR_URL` | Must support every network in `NETWORKS` |
-| `PRICE_USD` | Single option `/v1/option/price` — `0.01`–`0.10` (default `0.05`) |
-| `PRICE_VOL_SURFACE_USD` | Surface `/v1/volatility/surface` — `0.01`–`0.10` (default `0.10`) |
+| `PAY_TO_ADDRESS` | Primary receiving wallet: EVM `0x…` **or** Solana base58 (public only) |
+| `PAY_TO_EVM_ADDRESS` | Base/EVM receiver when dual-chain (e.g. `0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f`) |
+| `PAY_TO_SVM_ADDRESS` | Explicit Solana receiver when dual-chain |
+| `NETWORKS` | Comma-separated: `solana,base` (prod dual) \| `base-sepolia` \| `solana-devnet` \| … |
+| `FACILITATOR_URL` | Must support every network in `NETWORKS` (PayAI for mainnet dual) |
+| `PRICE_USD` | Single option `/v1/option/price` — `0.01`–`1.00` (default `0.05`) |
+| `PRICE_IMPLIED_VOL_USD` | IV solve `/v1/option/implied-vol` — default `0.03` |
+| `PRICE_VOL_SURFACE_USD` | Surface `/v1/volatility/surface` — default `0.10` |
+| `PRICE_PORTFOLIO_GREEKS_USD` | Portfolio Greeks `/v1/portfolio/greeks` — default `0.15` |
+| `PRICE_PORTFOLIO_SCENARIO_USD` | Scenarios `/v1/portfolio/scenario` — default `0.25` |
 | `MAX_SURFACE_OPTIONS` | Max options per surface request (default `200`) |
+| `MAX_PORTFOLIO_POSITIONS` | Max legs per portfolio request (default `100`) |
+| `MAX_SCENARIOS` | Max scenarios per scenario request (default `20`) |
 
 The server **never** needs a private key — only the receiving address(es).
 
@@ -83,6 +96,11 @@ curl -s -X POST http://localhost:4021/v1/volatility/surface \
 # Expect HTTP 402 (default $0.10)
 # Body explains payment_required; full terms are in the PAYMENT-REQUIRED header (base64).
 # To exercise the compute path without USDC locally: SKIP_PAYMENT=1 npm run dev
+
+# New endpoints (also 402 when unpaid):
+# POST /v1/option/implied-vol   ($0.03)
+# POST /v1/portfolio/greeks     ($0.15)
+# POST /v1/portfolio/scenario   ($0.25)
 ```
 
 ### 5. Paid test client
@@ -130,7 +148,10 @@ Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.we
 | Endpoint | Env | Default |
 |----------|-----|---------|
 | `POST /v1/option/price` | `PRICE_USD` | `$0.05` |
+| `POST /v1/option/implied-vol` | `PRICE_IMPLIED_VOL_USD` | `$0.03` |
 | `POST /v1/volatility/surface` | `PRICE_VOL_SURFACE_USD` | `$0.10` |
+| `POST /v1/portfolio/greeks` | `PRICE_PORTFOLIO_GREEKS_USD` | `$0.15` |
+| `POST /v1/portfolio/scenario` | `PRICE_PORTFOLIO_SCENARIO_USD` | `$0.25` |
 
 ### `POST /v1/option/price` (paid · x402 exact · USDC)
 
@@ -230,6 +251,91 @@ Invert a book of market premiums into an implied-vol surface, per-option IV + Gr
 
 IV inversion uses an internal black-box solver (`fastImpliedVol`); iteration details are not exposed.
 
+### `POST /v1/option/implied-vol` (paid · x402 exact · USDC · default `$0.03`)
+
+Solve implied volatility from a **single** market premium, then return full analytic Greeks at the solved σ. Reuses the same `fastImpliedVol` engine as the surface endpoint.
+
+**Request**
+
+```json
+{
+  "underlying": 100,
+  "strike": 100,
+  "timeToExpiry": 1,
+  "rate": 0.05,
+  "dividendYield": 0,
+  "optionType": "call",
+  "premium": 10.45057562
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `underlying` | yes | Underlying \(S > 0\) |
+| `strike` | yes | Strike \(K > 0\) |
+| `timeToExpiry` | yes | Years to expiry \(T \ge 0\) |
+| `rate` | yes | Continuous risk-free rate \(r\) |
+| `optionType` | yes | `"call"` or `"put"` |
+| `premium` | yes | Market premium \(\ge 0\) |
+| `dividendYield` | no | Continuous yield \(q\) (default `0`) |
+
+**Response `200` (shape)** — `impliedVol`, `greeks`, `modelPrice`, `priceError`, `iterations`, `converged`, `requestId`, `computedAt`.
+
+Non-convergent or out-of-bounds premiums return **422** `iv_solve_failed`.
+
+### `POST /v1/portfolio/greeks` (paid · x402 exact · USDC · default `$0.15`)
+
+Net MTM and Greeks for multi-leg European books. `quantity > 0` = long, `quantity < 0` = short.
+
+**Request**
+
+```json
+{
+  "rate": 0.05,
+  "dividendYield": 0,
+  "includeDollarGreeks": true,
+  "positions": [
+    {
+      "underlying": 100,
+      "strike": 100,
+      "timeToExpiry": 1,
+      "optionType": "call",
+      "quantity": 10,
+      "volatility": 0.2
+    },
+    {
+      "underlying": 100,
+      "strike": 110,
+      "timeToExpiry": 1,
+      "optionType": "put",
+      "quantity": -5,
+      "volatility": 0.22
+    }
+  ]
+}
+```
+
+**Response `200` (shape)** — `net.mtm`, `net.greeks`, optional `net.dollarGreeks`, `legs[]`, `positionCount`, `requestId`, `computedAt`.
+
+### `POST /v1/portfolio/scenario` (paid · x402 exact · USDC · default `$0.25`)
+
+Base portfolio MTM + Greeks, then reprice under relative shocks:
+
+- `spotShock` — relative; `newS = S * (1 + spotShock)`
+- `volShock` — relative; `newσ = σ * (1 + volShock)`
+- `timeDecayDays` — calendar days; `T` reduced by `days/365`
+
+Works for single-option and multi-leg portfolios.
+
+**Response `200` (shape)** — `base`, `scenarios[]` (each with `mtm`, `mtmChange`, `greeks`, `shocks`), `positionCount`, `scenarioCount`.
+
+### Performance notes
+
+- Single-option price/IV: sub-millisecond pure math (no I/O)
+- Portfolio Greeks: O(n) BSM evaluations over positions (default max 100)
+- Scenarios: O(n × m) reprice over positions × scenarios (defaults 100 × 20)
+- Surface: O(k) IV solves over market quotes (default max 200)
+
 ## Networks & facilitator
 
 | Network | CAIP-2 | Env alias | Scheme package |
@@ -249,20 +355,29 @@ NETWORKS=base-sepolia
 
 Works **without** API keys. **Testnet only** (Base Sepolia + Solana Devnet).
 
-### Solana / Base mainnet (recommended easy path)
+### Solana + Base mainnet (recommended production)
 
-PayAI supports Solana mainnet + Base mainnet with **no API keys**:
+PayAI supports **both** Solana mainnet and Base mainnet with **no API keys**. Configure dual networks so every 402 challenge offers **two** accepts (client pays USDC on either chain):
 
 ```bash
 FACILITATOR_URL=https://facilitator.payai.network
-NETWORKS=solana
+NETWORKS=solana,base
 PAY_TO_ADDRESS=YourSolanaBase58Address
+PAY_TO_SVM_ADDRESS=YourSolanaBase58Address   # optional explicit
+PAY_TO_EVM_ADDRESS=0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f
 ```
 
+Single-chain mainnet still works:
+
 ```bash
-FACILITATOR_URL=https://facilitator.payai.network
+# Solana only
+NETWORKS=solana
+PAY_TO_ADDRESS=YourSolanaBase58Address
+
+# Base only
 NETWORKS=base
 PAY_TO_ADDRESS=0xYourEvmAddress
+# or PAY_TO_EVM_ADDRESS=0x...
 ```
 
 ### CDP facilitator
@@ -298,7 +413,10 @@ Metadata lives in **`src/discovery/catalog.ts`** and is applied in `src/x402/rou
 | Endpoint | Bazaar name | Agent value |
 |----------|-------------|-------------|
 | `POST /v1/option/price` | BSM Price+Greeks | Single-contract fair value + hedge ratios |
+| `POST /v1/option/implied-vol` | Single IV Solver | One premium → σ̂ + Greeks |
 | `POST /v1/volatility/surface` | IV Surface Desk | Book → IV grid + Greeks for MM / risk |
+| `POST /v1/portfolio/greeks` | Portfolio Net Greeks | Multi-leg net MTM + Greeks |
+| `POST /v1/portfolio/scenario` | Portfolio Scenarios | What-if P&L under spot/vol/time |
 
 ### Indexing notes
 
@@ -358,13 +476,20 @@ Send `Idempotency-Key` on paid requests. Successful JSON responses are cached in
 ```
 src/
   index.ts / app.ts / config.ts
-  services/blackScholes.ts     # pure pricing
+  services/
+    blackScholes.ts            # pure BSM pricing + Greeks
+    fastImpliedVol.ts          # black-box IV solver
+    impliedVol.ts              # single-premium IV endpoint
+    portfolio.ts               # net Greeks + scenarios
+    volatilitySurface.ts       # IV surface builder
   routes/                      # free + paid handlers
+  schemas/                     # Zod + JSON Schema examples
+  discovery/catalog.ts         # Bazaar + service card metadata
   x402/                        # facilitator, resource server, route config
   middleware/                  # security, errors, idempotency
-  schemas/option.ts
 clients/test-client.ts
 tests/
+openapi.json · PAY.md
 ```
 
 ### Adding a new paid endpoint
@@ -409,10 +534,15 @@ Required / recommended for a Solana mainnet public API:
 |----------|---------|--------|
 | `NODE_ENV` | `production` | |
 | `TRUST_PROXY` | `1` | Railway terminates TLS |
-| `PAY_TO_ADDRESS` | `DCi9…` (public base58 or `0x…`) | **Public only** — where USDC is received |
-| `NETWORKS` | `solana` | Or `base`, `base-sepolia`, etc. |
-| `PRICE_USD` | `0.01` | Between `0.01` and `0.10` |
-| `FACILITATOR_URL` | `https://facilitator.payai.network` | Must support `NETWORKS` |
+| `NETWORKS` | `solana,base` | Dual USDC mainnet (or single chain) |
+| `PAY_TO_ADDRESS` | Solana base58 | **Public only** — primary / SVM receiver |
+| `PAY_TO_EVM_ADDRESS` | `0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f` | Base mainnet receiver |
+| `PAY_TO_SVM_ADDRESS` | same as Solana | Optional explicit SVM receiver |
+| `PRICE_USD` | `0.01` | Between `0.01` and `1.00` |
+| `PRICE_IMPLIED_VOL_USD` | `0.03` | Optional override |
+| `PRICE_PORTFOLIO_GREEKS_USD` | `0.15` | Optional override |
+| `PRICE_PORTFOLIO_SCENARIO_USD` | `0.25` | Optional override |
+| `FACILITATOR_URL` | `https://facilitator.payai.network` | Must support every network in `NETWORKS` |
 | `PUBLIC_BASE_URL` | `https://your-app.up.railway.app` | Set after first deploy / custom domain |
 | `CORS_ORIGIN` | your frontend origin(s) | Avoid `*` in production |
 
@@ -449,8 +579,9 @@ docker build -t x402-value-server .
 docker run --rm -p 4021:4021 \
   -e NODE_ENV=production \
   -e TRUST_PROXY=1 \
-  -e PAY_TO_ADDRESS=YourPublicAddress \
-  -e NETWORKS=solana \
+  -e NETWORKS=solana,base \
+  -e PAY_TO_ADDRESS=YourSolanaBase58Address \
+  -e PAY_TO_EVM_ADDRESS=0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f \
   -e PRICE_USD=0.01 \
   -e FACILITATOR_URL=https://facilitator.payai.network \
   -e PUBLIC_BASE_URL=http://localhost:4021 \
@@ -463,8 +594,9 @@ docker run --rm -p 4021:4021 \
 - [ ] `PAY_TO_ADDRESS` is a public address you control  
 - [ ] `TRUST_PROXY=1` behind Railway  
 - [ ] `CORS_ORIGIN` locked down if a browser frontend calls the API  
-- [ ] Facilitator matches `NETWORKS` (e.g. PayAI for Solana mainnet)  
-- [ ] Unpaid `POST /v1/option/price` returns **402** on the public URL  
+- [ ] Facilitator matches `NETWORKS` (PayAI for Solana + Base mainnet)  
+- [ ] Unpaid `POST /v1/option/price` returns **402** with accepts for every enabled network  
+- [ ] `GET /health` shows both `payToSvm` and `payToEvm` when dual-chain  
 
 Node **20+** required (image uses **22**).
 

@@ -64,8 +64,16 @@ export interface AppConfig {
   /** Paid price for /v1/volatility/surface */
   priceVolSurfaceUsd: number;
   priceVolSurfaceDollarString: string;
+  priceImpliedVolUsd: number;
+  priceImpliedVolDollarString: string;
+  pricePortfolioGreeksUsd: number;
+  pricePortfolioGreeksDollarString: string;
+  pricePortfolioScenarioUsd: number;
+  pricePortfolioScenarioDollarString: string;
   /** Max options accepted per surface request */
   maxSurfaceOptions: number;
+  maxPortfolioPositions: number;
+  maxScenarios: number;
   networks: NetworkAlias[];
   networkIds: NetworkId[];
   facilitatorUrl: string;

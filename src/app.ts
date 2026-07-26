@@ -15,6 +15,8 @@ import { healthRouter } from "./routes/health.js";
 import { wellKnownRouter } from "./routes/wellKnown.js";
 import { optionRouter } from "./routes/option.js";
 import { volatilityRouter } from "./routes/volatility.js";
+import { impliedVolRouter } from "./routes/impliedVol.js";
+import { portfolioRouter } from "./routes/portfolio.js";
 import { createFacilitatorClient } from "./x402/facilitator.js";
 import { createResourceServer } from "./x402/resourceServer.js";
 import { buildPaidRoutes } from "./x402/routeConfig.js";
@@ -72,6 +74,8 @@ export function createApp(): Express {
 
   app.use(optionRouter);
   app.use(volatilityRouter);
+  app.use(impliedVolRouter);
+  app.use(portfolioRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
