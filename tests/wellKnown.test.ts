@@ -31,6 +31,7 @@ describe("buildWellKnownX402", () => {
     }
 
     expect(doc.links.wellKnown).toContain("/.well-known/x402.json");
+    expect(doc.links.openapi).toContain("/openapi.json");
     expect(doc.discovery.paymentHeader).toBe("PAYMENT-REQUIRED");
   });
 

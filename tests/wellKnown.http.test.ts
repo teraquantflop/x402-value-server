@@ -92,4 +92,34 @@ describe("well-known x402 HTTP", () => {
     expect(body.examples).toBeDefined();
     expect(body.endpoints).toBeDefined();
   });
+
+  it("GET /openapi.json returns OpenAPI JSON", async () => {
+    const res = await fetch(`${baseUrl}/openapi.json`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/application\/json/);
+    const body = (await res.json()) as {
+      openapi?: string;
+      paths?: Record<string, unknown>;
+      info?: { title?: string };
+    };
+    expect(body.openapi).toMatch(/^3\./);
+    expect(body.paths).toBeDefined();
+    expect(body.paths?.["/v1/option/price"]).toBeDefined();
+    expect(body.info?.title).toBeTruthy();
+  });
+
+  it("GET /.well-known/x402.json still works alongside openapi", async () => {
+    const [wk, oa] = await Promise.all([
+      fetch(`${baseUrl}/.well-known/x402.json`),
+      fetch(`${baseUrl}/openapi.json`),
+    ]);
+    expect(wk.status).toBe(200);
+    expect(oa.status).toBe(200);
+    const wellKnown = (await wk.json()) as {
+      x402Version: number;
+      links?: { openapi?: string };
+    };
+    expect(wellKnown.x402Version).toBe(2);
+    expect(wellKnown.links?.openapi).toContain("/openapi.json");
+  });
 });

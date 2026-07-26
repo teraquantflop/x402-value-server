@@ -13,6 +13,7 @@ import {
 import { requestLogMiddleware } from "./middleware/requestLog.js";
 import { healthRouter } from "./routes/health.js";
 import { wellKnownRouter } from "./routes/wellKnown.js";
+import { openapiRouter, sendOpenApi } from "./routes/openapi.js";
 import { optionRouter } from "./routes/option.js";
 import { volatilityRouter } from "./routes/volatility.js";
 import { impliedVolRouter } from "./routes/impliedVol.js";
@@ -24,11 +25,11 @@ import { buildWellKnownX402 } from "./discovery/catalog.js";
 
 /**
  * Register free discovery routes on the Express app root.
- * Well-known paths are registered both via router and explicit app.get so
- * they always resolve at /.well-known/... regardless of mount quirks.
+ * Well-known / openapi paths are registered both via router and explicit app.get so
+ * they always resolve at the expected paths regardless of mount quirks.
  */
 function mountFreeDiscoveryRoutes(app: Express): void {
-  // Explicit root registration (most reliable for /.well-known/*)
+  // Explicit root registration (most reliable for /.well-known/* and /openapi.json)
   const sendWellKnown = (_req: Request, res: Response): void => {
     res
       .status(200)
@@ -39,9 +40,11 @@ function mountFreeDiscoveryRoutes(app: Express): void {
 
   app.get("/.well-known/x402", sendWellKnown);
   app.get("/.well-known/x402.json", sendWellKnown);
+  app.get("/openapi.json", sendOpenApi);
 
   // Router mount (same handlers) — keeps routes centralized for tests/docs
   app.use(wellKnownRouter);
+  app.use(openapiRouter);
   app.use(healthRouter);
 }
 

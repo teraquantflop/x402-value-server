@@ -28,6 +28,7 @@ function printBanner(): void {
   );
   console.log(`  free routes:  GET /`);
   console.log(`                GET /health`);
+  console.log(`                GET /openapi.json`);
   console.log(`                GET /.well-known/x402`);
   console.log(`                GET /.well-known/x402.json`);
   console.log(`  paid routes:  POST /v1/option/price          ${config.priceDollarString}`);

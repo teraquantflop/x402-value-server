@@ -322,6 +322,11 @@ export function buildServiceCard(config: AppConfig) {
           path: "/.well-known/x402.json",
           description: "x402 well-known discovery manifest (JSON, alias)",
         },
+        {
+          method: "GET",
+          path: "/openapi.json",
+          description: "OpenAPI 3.1 specification for all endpoints",
+        },
       ],
       paid: [
         {
@@ -447,6 +452,7 @@ export function buildWellKnownX402(config: AppConfig) {
       serviceCard: `${base}/`,
       health: `${base}/health`,
       wellKnown: `${base}/.well-known/x402.json`,
+      openapi: `${base}/openapi.json`,
     },
     discovery: {
       bazaar: true,

@@ -24,6 +24,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
+# Public OpenAPI document (served at GET /openapi.json)
+COPY openapi.json ./openapi.json
 
 # Non-root process
 RUN addgroup -S app && adduser -S app -G app

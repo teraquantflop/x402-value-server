@@ -26,7 +26,7 @@ Agent / Client
     │  GET / (discover) → POST paid path → 402 → pay USDC → 200 JSON
     ▼
 Express
-  free:  GET /  ·  GET /health  ·  GET /.well-known/x402(.json)
+  free:  GET /  ·  GET /health  ·  GET /openapi.json  ·  GET /.well-known/x402(.json)
   paid:  POST /v1/option/price
          POST /v1/option/implied-vol
          POST /v1/volatility/surface
@@ -133,6 +133,10 @@ Liveness + active networks / facilitator.
 
 **Primary discovery document** for agents: product pitch, capabilities, markets (equities / commodities / power / crypto), use cases, pricing, settlement networks, paid endpoint catalog with tags and agent hints, plus request/response examples.
 
+### `GET /openapi.json` (free)
+
+Full **OpenAPI 3.1** document (`Content-Type: application/json`). Same file as repo-root `openapi.json`. Listed in service card free endpoints and well-known `links.openapi`.
+
 ### `GET /.well-known/x402` and `GET /.well-known/x402.json` (free)
 
 Machine-readable **x402 discovery manifest** (same JSON for both paths):
@@ -140,7 +144,7 @@ Machine-readable **x402 discovery manifest** (same JSON for both paths):
 - `x402Version`, `protocol`, service name/description
 - `resources[]` — paid HTTP endpoints with absolute `url`, method, price, tags
 - `settlement` — USDC, networks (CAIP-2), facilitator, payTo
-- `links` — service card, health, well-known
+- `links` — service card, health, well-known, openapi
 
 Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.well-known/x402.json` for explicit JSON content-type consumers; both return `application/json`.
 ### Pricing
