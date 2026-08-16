@@ -10,11 +10,16 @@ import {
   MemoryIdempotencyStore,
   idempotencyMiddleware,
 } from "./middleware/idempotency.js";
+import {
+  freeTierMiddleware,
+  skipPaymentIfFreeTier,
+} from "./middleware/freeTier.js";
 import { requestLogMiddleware } from "./middleware/requestLog.js";
 import { healthRouter } from "./routes/health.js";
 import { wellKnownRouter } from "./routes/wellKnown.js";
 import { openapiRouter, sendOpenApi } from "./routes/openapi.js";
 import { llmsTxtRouter, sendLlmsTxt } from "./routes/llmsTxt.js";
+import { demoRouter } from "./routes/demo.js";
 import { optionRouter } from "./routes/option.js";
 import { volatilityRouter } from "./routes/volatility.js";
 import { impliedVolRouter } from "./routes/impliedVol.js";
@@ -23,14 +28,13 @@ import { createFacilitatorClient } from "./x402/facilitator.js";
 import { createResourceServer } from "./x402/resourceServer.js";
 import { buildPaidRoutes } from "./x402/routeConfig.js";
 import { buildWellKnownX402 } from "./discovery/catalog.js";
+import { mountMcpRoutes } from "./mcp/http.js";
+import type { x402ResourceServer } from "@x402/core/server";
 
 /**
  * Register free discovery routes on the Express app root.
- * Well-known / openapi / llms.txt paths are registered both via router and explicit
- * app.get so they always resolve at the expected paths regardless of mount quirks.
  */
 function mountFreeDiscoveryRoutes(app: Express): void {
-  // Explicit root registration (most reliable for /.well-known/* and static discovery)
   const sendWellKnown = (_req: Request, res: Response): void => {
     res
       .status(200)
@@ -44,11 +48,14 @@ function mountFreeDiscoveryRoutes(app: Express): void {
   app.get("/openapi.json", sendOpenApi);
   app.get("/llms.txt", sendLlmsTxt);
 
-  // Router mount (same handlers) — keeps routes centralized for tests/docs
   app.use(wellKnownRouter);
   app.use(openapiRouter);
   app.use(llmsTxtRouter);
   app.use(healthRouter);
+
+  if (config.freeDemoEnabled) {
+    app.use(demoRouter);
+  }
 }
 
 export function createApp(): Express {
@@ -59,23 +66,41 @@ export function createApp(): Express {
   app.use(requestLogMiddleware);
   app.use(express.json({ limit: "256kb" }));
 
-  // Free discovery first — before payment middleware / paid handlers
+  // Free discovery + free demo first
   mountFreeDiscoveryRoutes(app);
+
+  // Optional first-N free on /v1/option/price (before payment gate)
+  app.use(freeTierMiddleware(config));
 
   // Idempotency for paid handlers
   const idempotencyStore = new MemoryIdempotencyStore(config.idempotencyTtlMs);
   app.use(idempotencyMiddleware(idempotencyStore));
 
-  // x402 payment gate (optional skip for local debugging only)
+  let resourceServer: x402ResourceServer | null = null;
+
   if (config.skipPayment) {
     console.warn(
       "[warn] SKIP_PAYMENT=1 — x402 payment gate is DISABLED (local/debug only)",
     );
   } else {
     const facilitator = createFacilitatorClient(config);
-    const resourceServer = createResourceServer(facilitator, config);
+    resourceServer = createResourceServer(facilitator, config);
     const paidRoutes = buildPaidRoutes(config);
-    app.use(paymentMiddleware(paidRoutes, resourceServer));
+    const payMw = paymentMiddleware(paidRoutes, resourceServer);
+    app.use(skipPaymentIfFreeTier(payMw));
+  }
+
+  // MCP façade (own payment via @x402/mcp; not in HTTP paid route map)
+  if (config.mcpEnabled) {
+    if (config.skipPayment) {
+      // resourceServer may be null — create a lightweight one for MCP structure
+      // createDerivativesMcpServer handles skipPayment without needing verify/settle
+      const facilitator = createFacilitatorClient(config);
+      resourceServer = createResourceServer(facilitator, config);
+    }
+    if (resourceServer) {
+      mountMcpRoutes(app, config, resourceServer);
+    }
   }
 
   app.use(optionRouter);

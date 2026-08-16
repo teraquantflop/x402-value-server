@@ -85,6 +85,18 @@ export interface AppConfig {
   trustProxy: boolean;
   /** When true, skip x402 payment gate (local/debug only — never enable in production). */
   skipPayment: boolean;
+  /** Free fixed-sample demo at /v1/demo/option-price */
+  freeDemoEnabled: boolean;
+  freeDemoRateMax: number;
+  /**
+   * First N unpaid calls to POST /v1/option/price per IP per window are free.
+   * 0 = disabled (default).
+   */
+  freeTierN: number;
+  freeTierWindowMs: number;
+  /** Streamable HTTP MCP façade */
+  mcpEnabled: boolean;
+  mcpPath: string;
   serviceName: string;
   serviceVersion: string;
 }

@@ -109,6 +109,7 @@ export function buildPaidRoutes(config: AppConfig) {
       extensions: {
         ...declareDiscoveryExtension({
           bodyType: "json",
+          // Equity ATM primary example; power-style documented in schema description
           input: OPTION_EXAMPLE_INPUT,
           inputSchema: {
             properties: optionInputJsonSchema.properties as Record<

@@ -21,6 +21,8 @@ const FREE_PATHS = [
   "/health",
   "/openapi.json",
   "/llms.txt",
+  "/v1/demo/option-price",
+  "/mcp",
   "/.well-known/x402",
   "/.well-known/x402.json",
 ] as const;
@@ -41,8 +43,8 @@ describe("openapi.json free vs paid security", () => {
 
   it("marks free discovery operations with security: []", () => {
     for (const path of FREE_PATHS) {
-      const op = openapi.paths[path]?.get;
-      expect(op, `missing GET ${path}`).toBeDefined();
+      const op = openapi.paths[path]?.get ?? openapi.paths[path]?.post;
+      expect(op, `missing operation on ${path}`).toBeDefined();
       // Empty array = no payment / no auth (OpenAPI standard override)
       expect(op!.security, `${path} must have security: []`).toEqual([]);
     }

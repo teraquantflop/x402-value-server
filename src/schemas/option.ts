@@ -42,6 +42,20 @@ export const OPTION_EXAMPLE_INPUT = {
   dividendYield: 0,
 };
 
+/**
+ * Power/energy-style example (forward mark as spot, year-fraction to delivery).
+ * Documented for agents; Bazaar primary input remains OPTION_EXAMPLE_INPUT.
+ */
+export const OPTION_POWER_EXAMPLE_INPUT = {
+  spot: 82.5,
+  strike: 80,
+  timeToExpiry: 0.25,
+  rate: 0.04,
+  volatility: 0.35,
+  optionType: "call" as const,
+  dividendYield: 0,
+};
+
 export const OPTION_EXAMPLE_OUTPUT = {
   price: 10.45057562,
   greeks: {
@@ -70,14 +84,14 @@ export const optionInputJsonSchema = {
   type: "object",
   title: "EuropeanOptionPriceRequest",
   description:
-    "Inputs for Black-Scholes-Merton European option fair value. Use consistent units (e.g. USD/MWh for power, USD/bbl for oil). timeToExpiry in year-fractions (0.25 ≈ 3 months).",
+    "Inputs for Black-Scholes-Merton European option fair value. Use consistent units (e.g. USD/MWh for power, USD/bbl for oil, index points for equities). timeToExpiry in year-fractions (0.25 ≈ 3 months). Equity ATM example: spot=100,K=100,T=1,σ=0.2. Power-style: spot=82.5 (forward mark), strike=80, T=0.25, σ=0.35.",
   properties: {
     spot: {
       type: "number",
       description:
-        "Underlying price S (> 0). Spot or forward-equivalent level for the option (equity price, commodity index, power forward mark, etc.).",
+        "Underlying price S (> 0). Equity spot OR power/commodity forward mark for the option's maturity (forwards often differ by delivery period).",
       exclusiveMinimum: 0,
-      examples: [100, 45.5, 82.25],
+      examples: [100, 82.5, 45.5],
     },
     strike: {
       type: "number",

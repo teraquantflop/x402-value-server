@@ -20,6 +20,10 @@ describe("buildLlmsTxt", () => {
     expect(text).toMatch(/well-known\/x402/);
     expect(text).toMatch(/USDC|Solana|x402/i);
     expect(text).toContain("/llms.txt");
+    expect(text).toMatch(/demo\/option-price|Price list/i);
+    if (config.mcpEnabled) {
+      expect(text).toMatch(/mcp|price_option/i);
+    }
   });
 });
 

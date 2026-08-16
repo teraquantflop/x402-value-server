@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Derivatives Pricer",
-    "description": "x402-paid Black-Scholes European option pricing, analytic Greeks, single-premium IV, IV surfaces, portfolio net Greeks, and scenario reprice. USDC exact on Solana mainnet and/or Base mainnet via PayAI. No API keys.",
-    "version": "1.3.1",
+    "description": "x402-paid Black-Scholes European option pricing, analytic Greeks, IV surfaces, portfolio risk, free fixed demo, and MCP tool façade. USDC exact on Solana and/or Base. No API keys.",
+    "version": "1.4.0",
     "contact": {
       "name": "Derivatives Pricer",
       "url": "https://derivatives-pricer-production.up.railway.app"
@@ -126,6 +126,79 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/demo/option-price": {
+      "get": {
+        "operationId": "getDemoOptionPrice",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Free fixed ATM option sample",
+        "description": "Returns a fixed ATM European call priced with the live BSM engine. No payment. Abuse-resistant (inputs not customizable). Free — security: [].",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "Demo price + Greeks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postDemoOptionPrice",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Free fixed ATM option sample (POST alias)",
+        "description": "Same as GET /v1/demo/option-price. Body ignored. Free.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "Demo price + Greeks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "operationId": "mcpStreamableHttp",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "MCP Streamable HTTP (stateless)",
+        "description": "Model Context Protocol endpoint. Tools: service_info (free), price_option and implied_vol_surface (USDC x402 may be required). Not an HTTP 402 REST resource — payment is handled inside MCP meta via @x402/mcp.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "MCP JSON-RPC / streamable HTTP response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
                 }
               }
             }

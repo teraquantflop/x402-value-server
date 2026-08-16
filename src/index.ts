@@ -32,6 +32,17 @@ function printBanner(): void {
   console.log(`                GET /llms.txt`);
   console.log(`                GET /.well-known/x402`);
   console.log(`                GET /.well-known/x402.json`);
+  if (config.freeDemoEnabled) {
+    console.log(`                GET|POST /v1/demo/option-price  (free sample)`);
+  }
+  if (config.mcpEnabled) {
+    console.log(`                POST ${config.mcpPath}  (MCP Streamable HTTP)`);
+  }
+  if (config.freeTierN > 0) {
+    console.log(
+      `  free tier:    first ${config.freeTierN} POST /v1/option/price per IP/window`,
+    );
+  }
   console.log(`  paid routes:  POST /v1/option/price          ${config.priceDollarString}`);
   console.log(
     `                POST /v1/option/implied-vol    ${config.priceImpliedVolDollarString}`,

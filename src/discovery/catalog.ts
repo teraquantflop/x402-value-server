@@ -19,39 +19,56 @@ export const SERVICE_CATALOG = {
   productName: "x402 Derivatives Analytics Desk",
   versionField: "serviceVersion",
   tagline:
-    "Pay-per-call Black-Scholes pricing, Greeks, IV solve, portfolio risk, and scenario analysis for AI trading agents.",
-  /** Full service description for GET / and README (no 500-char limit) */
+    "Pay-per-call European option pricing, analytic Greeks, IV surfaces, and multi-leg book risk for power, commodity, equity, and crypto agents.",
+  /**
+   * English-first capability summary for agents (GET /, /llms.txt).
+   * Emphasize energy/power multi-maturity books and multi-leg risk, not only generic BSM.
+   */
   description:
-    "Production x402-paid quant API for autonomous agents in equities, commodities, power, and crypto derivatives. " +
-    "Price European options, extract full Greeks for hedging, invert market premiums to IV, aggregate multi-leg portfolio Greeks, " +
-    "and reprice under spot/vol/time scenarios — no API keys, settle in USDC via HTTP 402. Built for risk analysis, " +
-    "portfolio optimization, and automated market-making workflows.",
+    "Production x402 quant API for autonomous trading and risk agents. " +
+    "Price European options with full analytic Greeks; invert market premiums to implied vol (single quote or multi-maturity surface); " +
+    "aggregate multi-leg net Greeks; reprice books under spot/vol/time scenarios. " +
+    "Designed for power and energy desks (forward marks that differ by maturity), commodities, equities, and crypto — " +
+    "no API keys, USDC exact settlement via HTTP 402 on Solana and/or Base. " +
+    "Free fixed demo at /v1/demo/option-price; MCP tools at /mcp; paid HTTP routes remain the source of truth.",
   capabilities: [
     "european_option_pricing",
     "analytic_greeks",
     "single_premium_implied_vol",
     "implied_volatility_surface",
+    "multi_maturity_underlyings",
     "portfolio_net_greeks",
     "portfolio_scenario_analysis",
-    "multi_maturity_underlyings",
+    "power_energy_forward_marks",
     "x402_usdc_micropayments",
+    "mcp_tool_facade",
     "bazaar_discoverable",
     "idempotent_retries",
+    "free_demo_sample",
   ],
   useCases: [
-    "AI agents pricing power, gas, oil, metal, or equity options in real time",
+    "Price power/gas/oil European options off maturity-specific forward marks",
+    "Build multi-maturity IV surfaces from broker or exchange premium dumps",
     "Delta/vega hedging loops for automated market makers",
-    "Portfolio risk aggregation from Greeks across multi-leg books",
-    "Implied vol from a single market premium for marking/risk",
-    "Building IV surfaces from broker/exchange premium dumps",
-    "Commodity and energy desk scenario analysis (BSM European)",
+    "Net Greeks and MTM for multi-leg books (long/short signed quantity)",
+    "Scenario P&L under relative spot/vol shocks and calendar time decay",
+    "MCP hosts (Claude, Cursor, Windsurf) calling price_option / implied_vol_surface tools",
   ],
   markets: [
-    "equities",
-    "commodities",
     "power_and_energy",
+    "commodities",
+    "equities",
     "crypto",
     "fx_style_european",
+  ],
+  /** One-line capability bullets for agents (English-first). */
+  capabilitySummary: [
+    "Single-contract Black-Scholes-Merton fair value + delta/gamma/vega/theta/rho",
+    "Implied vol from one premium (fast) or a full strike×maturity surface (book)",
+    "Per-row underlyings so power/commodity forwards can differ by maturity",
+    "Multi-leg portfolio net Greeks, MTM, optional dollar Greeks, scenario reprice",
+    "x402 USDC exact on Solana mainnet and Base mainnet; free fixed demo for discovery",
+    "MCP façade: price_option and implied_vol_surface tools with the same settlement model",
   ],
 } as const;
 
@@ -84,12 +101,12 @@ export function clampTags(tags: string[]): string[] {
 
 export function optionPriceDiscovery(config: AppConfig) {
   const chain = chainHint(config);
-  // ≤500 chars for facilitator/Bazaar
+  // ≤500 chars — lead with when-to-use for Bazaar agents
   const description =
-    `European Black-Scholes-Merton fair value + full analytic Greeks (delta, gamma, vega, theta, rho) for AI risk, hedging, and trading agents. ` +
-    `Input spot, strike, T, r, σ, call/put; optional dividend yield. ` +
-    `Ideal for equities, commodities, power, and crypto European options. ` +
-    `USDC exact on ${chain}. No API keys — pay per call via x402.`;
+    `When to use: you already have model inputs (S or forward mark, K, T, r, σ) and need fair value + hedge ratios — not market-premium IV. ` +
+    `European BSM price + analytic Greeks (delta, gamma, vega, theta, rho). ` +
+    `Works for equity spots and power/commodity forwards (use the maturity mark as spot). ` +
+    `USDC exact on ${chain}. Free fixed sample: GET /v1/demo/option-price.`;
 
   return {
     serviceName: "BSM Price+Greeks",
@@ -97,15 +114,16 @@ export function optionPriceDiscovery(config: AppConfig) {
     tags: clampTags([
       "options",
       "greeks",
-      "risk",
+      "power",
       settlementTag(config),
       "usdc",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
       whenToCall:
-        "Need a single European option fair value and hedge ratios from model inputs (S,K,T,r,σ).",
+        "Have S/K/T/r/σ (or a power forward mark as S) and need price + Greeks. Prefer this over surface when you are not inverting market premiums.",
       relatedEndpoints: [
+        "GET /v1/demo/option-price",
         "POST /v1/option/implied-vol",
         "POST /v1/volatility/surface",
         "POST /v1/portfolio/greeks",
@@ -117,10 +135,10 @@ export function optionPriceDiscovery(config: AppConfig) {
 export function impliedVolDiscovery(config: AppConfig) {
   const chain = chainHint(config);
   const description =
-    `Solve Black-Scholes implied volatility from a single market premium, then return full analytic Greeks at the solved σ. ` +
-    `Input underlying, strike, T, r, call/put, premium; optional dividend yield. ` +
-    `Uses the same fastImpliedVol engine as the surface endpoint. ` +
-    `USDC exact on ${chain}. x402 pay-per-call — no accounts.`;
+    `When to use: one market premium → need σ̂ + Greeks; cheaper/faster than a full surface. ` +
+    `Solves Black-Scholes IV then prices Greeks at the solved σ. ` +
+    `Same engine as the surface endpoint (fastImpliedVol). ` +
+    `Prefer surface when you have a multi-strike/maturity book. USDC exact on ${chain}.`;
 
   return {
     serviceName: "Single IV Solver",
@@ -135,7 +153,7 @@ export function impliedVolDiscovery(config: AppConfig) {
     mimeType: "application/json" as const,
     agentHints: {
       whenToCall:
-        "Have one market premium and need σ̂ plus Greeks (faster/cheaper than a full surface).",
+        "One premium to mark or hedge. Use /v1/volatility/surface instead for books and multi-maturity power/commodity grids.",
       relatedEndpoints: [
         "POST /v1/option/price",
         "POST /v1/volatility/surface",
@@ -147,10 +165,10 @@ export function impliedVolDiscovery(config: AppConfig) {
 export function volatilitySurfaceDiscovery(config: AppConfig) {
   const chain = chainHint(config);
   const description =
-    `Implied-volatility surface builder for AI trading agents: submit shared rate/yield plus options with per-row underlying, strike, T, type, and market premium. ` +
-    `Returns IV grid, per-contract IV+Greeks, fit quality, and solve stats. ` +
-    `Supports multi-maturity underlyings (e.g. power/commodity forwards). ` +
-    `USDC exact on ${chain}. x402 pay-per-call — no accounts.`;
+    `When to use: book of market premiums → need IV grid + per-quote Greeks (not a single contract). ` +
+    `Shared rate/yield; each row has its own underlying (power/commodity forwards by maturity). ` +
+    `Returns strike×maturity IV surface, fit quality, solve stats. ` +
+    `USDC exact on ${chain}. Prefer single IV endpoint for one premium.`;
 
   return {
     serviceName: "IV Surface Desk",
@@ -158,14 +176,14 @@ export function volatilitySurfaceDiscovery(config: AppConfig) {
     tags: clampTags([
       "volatility",
       "iv-surface",
-      "commodities",
+      "power",
       settlementTag(config),
       "usdc",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
       whenToCall:
-        "Have a book of market premiums and need IVs, Greeks, and a strike×maturity surface for risk or MM.",
+        "Multi-strike/multi-maturity premiums (e.g. power stack or commodity curve). Use price_option / /v1/option/price when σ is already known.",
       relatedEndpoints: [
         "POST /v1/option/price",
         "POST /v1/option/implied-vol",
@@ -177,10 +195,9 @@ export function volatilitySurfaceDiscovery(config: AppConfig) {
 export function portfolioGreeksDiscovery(config: AppConfig) {
   const chain = chainHint(config);
   const description =
-    `Net portfolio Greeks and MTM for multi-leg European option books. ` +
-    `Submit shared rate/yield plus positions (underlying, strike, T, type, quantity, vol). ` +
-    `quantity > 0 long, < 0 short. Optional dollar Greeks. ` +
-    `USDC exact on ${chain}. x402 pay-per-call — no accounts.`;
+    `When to use: multi-leg European book → need net MTM + net Greeks (long/short via signed quantity). ` +
+    `Shared rate/yield; each leg has underlying, strike, T, type, quantity, vol. ` +
+    `Optional dollar Greeks. Prefer scenario endpoint for what-if P&L. USDC exact on ${chain}.`;
 
   return {
     serviceName: "Portfolio Net Greeks",
@@ -195,7 +212,7 @@ export function portfolioGreeksDiscovery(config: AppConfig) {
     mimeType: "application/json" as const,
     agentHints: {
       whenToCall:
-        "Need aggregated delta/gamma/vega/theta/rho and MTM across a multi-leg European book.",
+        "Aggregate delta/gamma/vega/theta/rho across a multi-leg book. Use scenario for shocked MTM.",
       relatedEndpoints: [
         "POST /v1/portfolio/scenario",
         "POST /v1/option/price",
@@ -207,10 +224,9 @@ export function portfolioGreeksDiscovery(config: AppConfig) {
 export function portfolioScenarioDiscovery(config: AppConfig) {
   const chain = chainHint(config);
   const description =
-    `Scenario reprice for multi-leg European portfolios: relative spotShock, volShock, and calendar timeDecayDays. ` +
-    `Returns base MTM+Greeks and per-scenario shocked MTM, MTM change, and full Greeks. ` +
-    `Supports single-option and multi-leg books. ` +
-    `USDC exact on ${chain}. x402 pay-per-call — no accounts.`;
+    `When to use: what-if P&L under relative spot/vol shocks and calendar time decay on a European book. ` +
+    `Returns base MTM+Greeks and per-scenario shocked MTM, MTM change, full Greeks. ` +
+    `Single-option or multi-leg. USDC exact on ${chain}.`;
 
   return {
     serviceName: "Portfolio Scenarios",
@@ -225,7 +241,7 @@ export function portfolioScenarioDiscovery(config: AppConfig) {
     mimeType: "application/json" as const,
     agentHints: {
       whenToCall:
-        "Need what-if P&L and Greeks under spot/vol moves and time decay for a European option book.",
+        "Need shocked MTM and Greeks (spotShock, volShock, timeDecayDays). Use portfolio/greeks for base risk only.",
       relatedEndpoints: [
         "POST /v1/portfolio/greeks",
         "POST /v1/option/price",
@@ -242,18 +258,28 @@ export function buildServiceCard(config: AppConfig) {
   const portfolioMeta = portfolioGreeksDiscovery(config);
   const scenarioMeta = portfolioScenarioDiscovery(config);
 
+  const base = config.publicBaseUrl.replace(/\/$/, "");
+
   return {
     service: SERVICE_CATALOG.serviceName,
     productName: SERVICE_CATALOG.productName,
     version: config.serviceVersion,
     tagline: SERVICE_CATALOG.tagline,
     description: SERVICE_CATALOG.description,
+    capabilitySummary: [...SERVICE_CATALOG.capabilitySummary],
     capabilities: [...SERVICE_CATALOG.capabilities],
     useCases: [...SERVICE_CATALOG.useCases],
     markets: [...SERVICE_CATALOG.markets],
     pricing: {
       currency: "USDC",
       scheme: "exact",
+      summary:
+        `option ${config.priceDollarString} · implied-vol ${config.priceImpliedVolDollarString} · ` +
+        `surface ${config.priceVolSurfaceDollarString} · portfolio-greeks ${config.pricePortfolioGreeksDollarString} · ` +
+        `scenario ${config.pricePortfolioScenarioDollarString} · free fixed demo at /v1/demo/option-price` +
+        (config.freeTierN > 0
+          ? ` · first ${config.freeTierN} /v1/option/price calls per IP/window free`
+          : ""),
       optionPrice: {
         path: "POST /v1/option/price",
         price: config.priceDollarString,
@@ -279,6 +305,26 @@ export function buildServiceCard(config: AppConfig) {
         price: config.pricePortfolioScenarioDollarString,
         env: "PRICE_PORTFOLIO_SCENARIO_USD",
       },
+      freeDemo: {
+        path: "GET|POST /v1/demo/option-price",
+        price: "$0.00",
+        note: "Fixed ATM sample via live BSM engine; no wallet",
+      },
+    },
+    mcp: config.mcpEnabled
+      ? {
+          enabled: true,
+          path: config.mcpPath,
+          url: `${base}${config.mcpPath}`,
+          tools: ["price_option", "implied_vol_surface", "service_info"],
+          transport: "streamable-http-stateless",
+          note: "MCP is a façade over the same pricing services; USDC payment may be required on paid tools.",
+        }
+      : { enabled: false },
+    freeTier: {
+      demoEnabled: config.freeDemoEnabled,
+      firstNOnOptionPrice: config.freeTierN,
+      windowMs: config.freeTierWindowMs,
     },
     settlement: {
       networks: config.networks.map((alias, i) => {
@@ -312,6 +358,26 @@ export function buildServiceCard(config: AppConfig) {
           description:
             "Machine-readable service card: capabilities, use cases, endpoint catalog, examples",
         },
+        ...(config.freeDemoEnabled
+          ? [
+              {
+                method: "GET|POST",
+                path: "/v1/demo/option-price",
+                description:
+                  "Free fixed ATM BSM sample (live engine, constant inputs) for discovery indexes",
+              },
+            ]
+          : []),
+        ...(config.mcpEnabled
+          ? [
+              {
+                method: "POST",
+                path: config.mcpPath,
+                description:
+                  "MCP Streamable HTTP (stateless): price_option, implied_vol_surface, service_info",
+              },
+            ]
+          : []),
         {
           method: "GET",
           path: "/.well-known/x402",
@@ -460,6 +526,10 @@ export function buildWellKnownX402(config: AppConfig) {
       wellKnown: `${base}/.well-known/x402.json`,
       openapi: `${base}/openapi.json`,
       llmsTxt: `${base}/llms.txt`,
+      freeDemo: config.freeDemoEnabled
+        ? `${base}/v1/demo/option-price`
+        : undefined,
+      mcp: config.mcpEnabled ? `${base}${config.mcpPath}` : undefined,
     },
     discovery: {
       bazaar: true,

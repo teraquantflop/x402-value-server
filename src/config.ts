@@ -123,6 +123,30 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
+  /** Fixed-sample free demo (default on). Set FREE_DEMO_ENABLED=0 to disable. */
+  FREE_DEMO_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v !== "0" && v !== "false"),
+  FREE_DEMO_RATE_MAX: z.coerce.number().int().positive().default(30),
+  /** First-N free on POST /v1/option/price only (0 = off). */
+  FREE_TIER_N: z.coerce.number().int().min(0).max(10_000).default(0),
+  FREE_TIER_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(86_400_000),
+  MCP_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v !== "0" && v !== "false"),
+  MCP_PATH: z
+    .string()
+    .default("/mcp")
+    .transform((v) => {
+      const p = v.trim() || "/mcp";
+      return p.startsWith("/") ? p : `/${p}`;
+    }),
 });
 
 function parseNetworks(raw: string): NetworkAlias[] {
@@ -268,8 +292,14 @@ function loadConfig(): AppConfig {
     idempotencyTtlMs: env.IDEMPOTENCY_TTL_MS,
     trustProxy: Boolean(env.TRUST_PROXY),
     skipPayment,
+    freeDemoEnabled: env.FREE_DEMO_ENABLED !== false,
+    freeDemoRateMax: env.FREE_DEMO_RATE_MAX,
+    freeTierN: env.FREE_TIER_N,
+    freeTierWindowMs: env.FREE_TIER_WINDOW_MS,
+    mcpEnabled: env.MCP_ENABLED !== false,
+    mcpPath: env.MCP_PATH,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.3.0",
+    serviceVersion: "1.4.0",
   };
 }
 

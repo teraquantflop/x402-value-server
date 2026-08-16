@@ -22,11 +22,15 @@ export function buildLlmsTxt(config: AppConfig): string {
   const lines: string[] = [
     `# ${SERVICE_CATALOG.productName}`,
     "",
-    `> ${SERVICE_CATALOG.tagline} Settle **USDC** via HTTP 402 (x402 exact) on **Solana mainnet and/or Base mainnet** — no API keys.`,
+    `> ${SERVICE_CATALOG.tagline} Settle **USDC** via HTTP 402 (x402 exact) on **Solana and/or Base** — no API keys.`,
     "",
-    "## Overview",
+    "## What this service does (English)",
     "",
     SERVICE_CATALOG.description,
+    "",
+    "## Capability summary",
+    "",
+    ...SERVICE_CATALOG.capabilitySummary.map((c) => `- ${c}`),
     "",
     `- **Version:** ${config.serviceVersion}`,
     `- **Protocol:** x402 (exact scheme, USDC)`,
@@ -34,43 +38,82 @@ export function buildLlmsTxt(config: AppConfig): string {
     `- **Facilitator:** ${config.facilitatorUrl}`,
     `- **Markets:** ${SERVICE_CATALOG.markets.join(", ")}`,
     "",
-    "## Capabilities",
+    "## Price list (USDC exact)",
     "",
-    ...SERVICE_CATALOG.capabilities.map((c) => `- ${c.replace(/_/g, " ")}`),
+    `| Endpoint | Price | Use when |`,
+    `|----------|-------|----------|`,
+    `| POST /v1/option/price | ${config.priceDollarString} | Have S,K,T,r,σ → fair value + Greeks |`,
+    `| POST /v1/option/implied-vol | ${config.priceImpliedVolDollarString} | One market premium → σ̂ + Greeks |`,
+    `| POST /v1/volatility/surface | ${config.priceVolSurfaceDollarString} | Premium book / multi-maturity power-commodity surface |`,
+    `| POST /v1/portfolio/greeks | ${config.pricePortfolioGreeksDollarString} | Multi-leg net MTM + Greeks |`,
+    `| POST /v1/portfolio/scenario | ${config.pricePortfolioScenarioDollarString} | Spot/vol/time scenario P&L |`,
+    `| GET/POST /v1/demo/option-price | free | Fixed ATM sample (discovery seeding) |`,
     "",
-    "## Paid endpoints (USDC exact)",
+  ];
+
+  if (config.freeTierN > 0) {
+    lines.push(
+      `Optional soft free tier: first **${config.freeTierN}** calls to \`POST /v1/option/price\` per IP per window are free (\`FREE_TIER_N\`).`,
+      "",
+    );
+  }
+
+  lines.push(
+    "## Paid endpoint links",
     "",
-    `- [POST /v1/option/price](${abs(base, "/v1/option/price")}) — **${config.priceDollarString}** — European Black-Scholes-Merton fair value + full analytic Greeks`,
-    `- [POST /v1/option/implied-vol](${abs(base, "/v1/option/implied-vol")}) — **${config.priceImpliedVolDollarString}** — Solve implied vol from one market premium + Greeks`,
-    `- [POST /v1/volatility/surface](${abs(base, "/v1/volatility/surface")}) — **${config.priceVolSurfaceDollarString}** — IV surface grid + per-quote IV/Greeks from market premiums`,
-    `- [POST /v1/portfolio/greeks](${abs(base, "/v1/portfolio/greeks")}) — **${config.pricePortfolioGreeksDollarString}** — Net MTM + Greeks for multi-leg books (signed quantity)`,
-    `- [POST /v1/portfolio/scenario](${abs(base, "/v1/portfolio/scenario")}) — **${config.pricePortfolioScenarioDollarString}** — Scenario reprice under spot/vol/time shocks`,
+    `- [POST /v1/option/price](${abs(base, "/v1/option/price")}) — **${config.priceDollarString}**`,
+    `- [POST /v1/option/implied-vol](${abs(base, "/v1/option/implied-vol")}) — **${config.priceImpliedVolDollarString}**`,
+    `- [POST /v1/volatility/surface](${abs(base, "/v1/volatility/surface")}) — **${config.priceVolSurfaceDollarString}**`,
+    `- [POST /v1/portfolio/greeks](${abs(base, "/v1/portfolio/greeks")}) — **${config.pricePortfolioGreeksDollarString}**`,
+    `- [POST /v1/portfolio/scenario](${abs(base, "/v1/portfolio/scenario")}) — **${config.pricePortfolioScenarioDollarString}**`,
     "",
-    "Unpaid calls to paid paths return **HTTP 402** with a `PAYMENT-REQUIRED` header (base64). Clients may pay on **any** listed network.",
+    "Unpaid paid-path calls return **HTTP 402** with `PAYMENT-REQUIRED` (base64). Pay on **any** listed network.",
     "",
     "## Free discovery",
     "",
-    `- [Service card (JSON)](${abs(base, "/")}) — capabilities, pricing, examples, agent hints`,
-    `- [Health](${abs(base, "/health")}) — liveness, networks, prices, payTo`,
-    `- [OpenAPI](${abs(base, "/openapi.json")}) — full request/response schemas`,
-    `- [x402 well-known](${abs(base, "/.well-known/x402.json")}) — machine-readable x402 discovery manifest`,
-    `- [x402 well-known (alias)](${abs(base, "/.well-known/x402")}) — same as above`,
+    `- [Service card (JSON)](${abs(base, "/")})`,
+    `- [Health](${abs(base, "/health")})`,
+    `- [OpenAPI](${abs(base, "/openapi.json")})`,
+    `- [x402 well-known](${abs(base, "/.well-known/x402.json")})`,
     `- [llms.txt](${abs(base, "/llms.txt")}) — this file`,
+  );
+
+  if (config.freeDemoEnabled) {
+    lines.push(
+      `- [Free demo option price](${abs(base, "/v1/demo/option-price")}) — fixed ATM BSM sample`,
+    );
+  }
+  if (config.mcpEnabled) {
+    lines.push(
+      `- [MCP Streamable HTTP](${abs(base, config.mcpPath)}) — tools: \`price_option\`, \`implied_vol_surface\`, \`service_info\``,
+    );
+  }
+
+  lines.push(
     "",
-    "## How agents should call",
+    "## When to call which tool",
     "",
-    "1. Read this file or `GET /` / `GET /.well-known/x402.json` to choose an endpoint.",
-    "2. `POST` the paid path without payment → parse `PAYMENT-REQUIRED` for accepts (network, payTo, amount).",
-    "3. Settle USDC on Solana or Base via an x402 client; retry with payment proof.",
-    "4. Optional: send `Idempotency-Key` for safe retries after successful payment.",
+    "- **price / price_option** — model inputs known; need fair value + Greeks (equity spot or power forward mark as S).",
+    "- **implied-vol** — one market premium to invert; not a full book.",
+    "- **surface / implied_vol_surface** — multi-strike multi-maturity premiums; underlyings may differ by maturity.",
+    "- **portfolio/greeks** — net risk on a multi-leg book.",
+    "- **portfolio/scenario** — shocked MTM under spot/vol/time.",
+    "",
+    "## How agents should pay",
+    "",
+    "1. Discover via this file, `GET /`, or `GET /.well-known/x402.json`.",
+    "2. Optional: hit free demo to validate JSON shape without a wallet.",
+    "3. `POST` paid path unpaid → parse `PAYMENT-REQUIRED` accepts (Solana and/or Base).",
+    "4. Settle USDC; retry with payment proof. Optional `Idempotency-Key`.",
+    "5. MCP hosts: connect to the MCP URL; paid tools may require USDC the same way.",
     "",
     "## Notes",
     "",
-    "- Model: European Black-Scholes-Merton with continuous dividend yield.",
-    "- Greeks: analytic delta, gamma, vega, theta, rho (raw derivatives, not desk scalings).",
-    "- No accounts, no API keys — public payTo addresses only on the server.",
+    "- Model: European Black-Scholes-Merton with continuous dividend/convenience yield.",
+    "- Greeks: raw analytic derivatives (not per-1% / per-day desk scalings).",
+    "- No accounts, no API keys — public payTo only on the server.",
     "",
-  ];
+  );
 
   return lines.join("\n");
 }

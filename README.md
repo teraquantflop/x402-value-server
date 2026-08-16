@@ -8,14 +8,16 @@ Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** p
 
 - **POST `/v1/option/price`** — fair value + delta/gamma/vega/theta/rho (risk, hedging, trading)
 - **POST `/v1/option/implied-vol`** — solve σ̂ from one market premium + full Greeks (`fastImpliedVol`)
-- **POST `/v1/volatility/surface`** — invert market premiums → IV grid + per-quote Greeks (multi-maturity underlyings)
+- **POST `/v1/volatility/surface`** — invert market premiums → IV grid + per-quote Greeks (multi-maturity underlyings; power/commodity marks)
 - **POST `/v1/portfolio/greeks`** — net MTM + Greeks for multi-leg books (long/short via signed quantity)
 - **POST `/v1/portfolio/scenario`** — base + shocked MTM/Greeks under spot/vol/time scenarios
+- **GET|POST `/v1/demo/option-price`** — **free** fixed ATM sample (live engine, constant inputs) for discovery indexes
+- **POST `/mcp`** — **MCP Streamable HTTP** façade (`price_option`, `implied_vol_surface`, free `service_info`)
 - Settlement: **Solana mainnet + Base mainnet** dual USDC (exact) via PayAI; also Base Sepolia / Solana Devnet for test
 - 402 challenges list **one accept per network** — clients pay on Solana **or** Base
 - Configurable micropayments **$0.01–$1.00** per endpoint
-- **Rich Bazaar discovery** (descriptions, tags, input/output schemas, examples)
-- Machine-readable **service card** at `GET /` (capabilities, use cases, markets)
+- **Rich Bazaar discovery** (descriptions, tags, input/output schemas, examples, agent when-to-use copy)
+- Machine-readable **service card** at `GET /` and **`/llms.txt`** for agents
 - **Idempotent** retries (`Idempotency-Key`), helmet/CORS/rate limits, Zod validation
 - Simple **test client** (`npm run client`)
 
@@ -26,8 +28,11 @@ Agent / Client
     │  GET / (discover) → POST paid path → 402 → pay USDC → 200 JSON
     ▼
 Express
-  free:  GET /  ·  GET /health  ·  GET /openapi.json  ·  GET /llms.txt  ·  GET /.well-known/x402(.json)
-  paid:  POST /v1/option/price
+  free:  GET /  ·  GET /health  ·  GET /openapi.json  ·  GET /llms.txt
+         GET /.well-known/x402(.json)
+         GET|POST /v1/demo/option-price   (fixed sample)
+         POST /mcp                        (MCP Streamable HTTP)
+  paid:  POST /v1/option/price            (+ optional FREE_TIER_N)
          POST /v1/option/implied-vol
          POST /v1/volatility/surface
          POST /v1/portfolio/greeks
@@ -35,7 +40,7 @@ Express
            │
            ├─ Zod validation
            ├─ Idempotency cache
-           └─ BSM / IV / portfolio services
+           └─ BSM / IV / portfolio services  ← also used by MCP tools
                     │
                     ▼
          HTTPFacilitatorClient → FACILITATOR_URL
@@ -69,6 +74,12 @@ Edit `.env`:
 | `MAX_SURFACE_OPTIONS` | Max options per surface request (default `200`) |
 | `MAX_PORTFOLIO_POSITIONS` | Max legs per portfolio request (default `100`) |
 | `MAX_SCENARIOS` | Max scenarios per scenario request (default `20`) |
+| `FREE_DEMO_ENABLED` | Fixed free sample at `/v1/demo/option-price` (default on) |
+| `FREE_DEMO_RATE_MAX` | Rate limit for free demo (default `30` / window) |
+| `FREE_TIER_N` | First-N free on `POST /v1/option/price` only (`0` = off) |
+| `FREE_TIER_WINDOW_MS` | Window for free tier (default 24h) |
+| `MCP_ENABLED` | Streamable HTTP MCP at `MCP_PATH` (default on) |
+| `MCP_PATH` | MCP path (default `/mcp`) |
 
 The server **never** needs a private key — only the receiving address(es).
 
@@ -139,9 +150,48 @@ Full **OpenAPI 3.1** document (`Content-Type: application/json`). Same file as r
 
 ### `GET /llms.txt` (free)
 
-Concise **Markdown** summary for AI agents ([llms.txt](https://llmstxt.org) convention): service overview, capabilities, paid endpoints with prices, dual Solana/Base settlement, and links to OpenAPI / well-known / health / service card. `Content-Type: text/plain; charset=utf-8`.
+Concise **Markdown** summary for AI agents ([llms.txt](https://llmstxt.org) convention): English capability summary, price list, free demo, MCP URL, dual Solana/Base settlement. `Content-Type: text/plain; charset=utf-8`.
 
-Discovery/free operations are marked with `"security": []` so x402 scanners do not expect HTTP 402 on `/`, `/health`, `/openapi.json`, `/llms.txt`, or `/.well-known/x402(.json)`. Paid `/v1/*` operations declare the `x402` security scheme.
+### `GET|POST /v1/demo/option-price` (free)
+
+**Fixed** ATM European call (`S=K=100`, `T=1`, `r=0.05`, `σ=0.2`) priced with the **live** BSM engine. Body is ignored on POST. No wallet. Rate-limited (`FREE_DEMO_RATE_MAX`). Intended for Bazaar/index seeding and smoke checks — **not** a free custom pricer.
+
+### Free-tier seeding (optional)
+
+| Mechanism | Default | Behavior |
+|-----------|---------|----------|
+| Free demo route | **On** | Fixed sample only; abuse-resistant |
+| `FREE_TIER_N` | **0 (off)** | First N unpaid `POST /v1/option/price` per IP per window skip payment (`X-Free-Tier-Remaining` header). In-memory per process. |
+
+Paid routes are **never** permanently free. Surface/portfolio always require payment when the gate is on.
+
+### MCP server (additive façade)
+
+Stateless **Streamable HTTP** at `POST /mcp` (path overridable via `MCP_PATH`).
+
+| Tool | Payment | Maps to |
+|------|---------|---------|
+| `service_info` | free | Discovery snapshot |
+| `price_option` | `PRICE_USD` USDC | same service as `POST /v1/option/price` |
+| `implied_vol_surface` | `PRICE_VOL_SURFACE_USD` | same as `POST /v1/volatility/surface` |
+
+HTTP x402 routes remain the source of truth; MCP calls the same TypeScript services (no HTTP self-loop). Payment uses `@x402/mcp` `createPaymentWrapper` with the same Solana/Base accepts as HTTP.
+
+**Cursor / Claude-compatible remote config (example):**
+
+```json
+{
+  "mcpServers": {
+    "derivatives-pricer": {
+      "url": "https://YOUR_APP.up.railway.app/mcp"
+    }
+  }
+}
+```
+
+Hosts that only support stdio may need a local bridge. Agents with wallets can use `@x402/mcp` client helpers for auto-payment on tool calls.
+
+Discovery/free operations are marked with `"security": []` in OpenAPI so x402 scanners do not expect HTTP 402 on discovery paths. Paid `/v1/*` operations declare the `x402` security scheme.
 
 *(Optional later: favicon at `/favicon.ico` for browsers that probe it — not required for agents.)*
 
@@ -410,9 +460,18 @@ import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 > **Fail-fast:** the server rejects routes the facilitator does not support (e.g.
 > `NETWORKS=solana` with `https://x402.org/facilitator`).
 
-## Bazaar discovery (agent catalog)
+## Bazaar discovery checklist
 
 Metadata lives in **`src/discovery/catalog.ts`** and is applied in `src/x402/routeConfig.ts` via `declareDiscoveryExtension`.
+
+- [x] Paid routes: description ≤500 chars, serviceName ≤32, tags ≤5  
+- [x] Bazaar input/output schemas + concrete examples (equity ATM + power-style notes)  
+- [x] Agent when-to-use copy (price vs IV vs surface vs portfolio)  
+- [x] `GET /` service card + `GET /llms.txt` English capability summary + price list  
+- [x] Free demo `GET /v1/demo/option-price` for non-wallet 200 samples  
+- [x] OpenAPI free paths with `"security": []`  
+- [x] Dual Solana + Base USDC accepts on paid routes  
+- [x] MCP tools discoverable via service card `mcp` field + `/llms.txt`  
 
 | Layer | What agents get |
 |-------|------------------|
@@ -571,10 +630,16 @@ Then set `PUBLIC_BASE_URL` to that `https://…` URL and redeploy if needed.
 
 ```bash
 curl -sS https://YOUR_APP.up.railway.app/health | jq
+curl -sS https://YOUR_APP.up.railway.app/v1/demo/option-price | jq '.price,.demo'
+# Expect: 200, demo=true, real BSM price
+
 curl -sS -D - -o /dev/null -X POST https://YOUR_APP.up.railway.app/v1/option/price \
   -H 'Content-Type: application/json' \
   -d '{"spot":100,"strike":100,"timeToExpiry":1,"rate":0.05,"volatility":0.2,"optionType":"call"}'
-# Expect: HTTP/2 402 and a PAYMENT-REQUIRED header
+# Expect: HTTP 402 and a PAYMENT-REQUIRED header (unless FREE_TIER_N still has quota)
+
+curl -sS https://YOUR_APP.up.railway.app/llms.txt | head
+# Optional: FREE_TIER_N=5 for first-week crawler soft-free on /v1/option/price only
 ```
 
 Local paid tests still use a **local** key:
