@@ -14,6 +14,10 @@ import {
   freeTierMiddleware,
   skipPaymentIfFreeTier,
 } from "./middleware/freeTier.js";
+import {
+  deferredJsonParser,
+  rejectStashedJsonError,
+} from "./middleware/deferredJson.js";
 import { requestLogMiddleware } from "./middleware/requestLog.js";
 import { healthRouter } from "./routes/health.js";
 import { wellKnownRouter } from "./routes/wellKnown.js";
@@ -64,7 +68,9 @@ export function createApp(): Express {
   applySecurity(app, config);
   app.use(requestIdMiddleware);
   app.use(requestLogMiddleware);
-  app.use(express.json({ limit: "256kb" }));
+  // Parse JSON but defer SyntaxError until after the x402 payment gate
+  // so unpaid paid-routes return 402 (not 400) on empty/malformed bodies.
+  app.use(deferredJsonParser("256kb"));
 
   // Free discovery + free demo first
   mountFreeDiscoveryRoutes(app);
@@ -87,8 +93,12 @@ export function createApp(): Express {
     resourceServer = createResourceServer(facilitator, config);
     const paidRoutes = buildPaidRoutes(config);
     const payMw = paymentMiddleware(paidRoutes, resourceServer);
+    // Payment first: unpaid → 402 before Zod / stashed JSON errors
     app.use(skipPaymentIfFreeTier(payMw));
   }
+
+  // After payment (or free-tier / SKIP_PAYMENT): surface deferred JSON parse errors
+  app.use(rejectStashedJsonError);
 
   // MCP façade (own payment via @x402/mcp; not in HTTP paid route map)
   if (config.mcpEnabled) {
@@ -103,6 +113,7 @@ export function createApp(): Express {
     }
   }
 
+  // Paid handlers: Zod validation only runs after payment gate above
   app.use(optionRouter);
   app.use(volatilityRouter);
   app.use(impliedVolRouter);

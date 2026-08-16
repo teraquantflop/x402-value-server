@@ -9,6 +9,7 @@ export const impliedVolRouter = Router();
 /**
  * POST /v1/option/implied-vol
  * Protected by x402 paymentMiddleware (mounted in app.ts), unless SKIP_PAYMENT=1.
+ * Zod runs only after payment (or free-tier / SKIP_PAYMENT).
  */
 impliedVolRouter.post("/v1/option/implied-vol", (req, res, next) => {
   const requestId = getRequestId(req);

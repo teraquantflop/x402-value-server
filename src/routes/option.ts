@@ -9,6 +9,7 @@ export const optionRouter = Router();
 /**
  * POST /v1/option/price
  * Protected by x402 paymentMiddleware (mounted in app.ts).
+ * Zod runs only after payment (or free-tier / SKIP_PAYMENT).
  */
 optionRouter.post("/v1/option/price", (req, res, next) => {
   try {

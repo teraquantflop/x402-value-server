@@ -15,6 +15,7 @@ export const portfolioRouter = Router();
 /**
  * POST /v1/portfolio/greeks
  * Protected by x402 paymentMiddleware (mounted in app.ts), unless SKIP_PAYMENT=1.
+ * Zod runs only after payment (or free-tier / SKIP_PAYMENT).
  */
 portfolioRouter.post("/v1/portfolio/greeks", (req, res, next) => {
   const requestId = getRequestId(req);
@@ -56,6 +57,7 @@ portfolioRouter.post("/v1/portfolio/greeks", (req, res, next) => {
 /**
  * POST /v1/portfolio/scenario
  * Protected by x402 paymentMiddleware (mounted in app.ts), unless SKIP_PAYMENT=1.
+ * Zod runs only after payment (or free-tier / SKIP_PAYMENT).
  */
 portfolioRouter.post("/v1/portfolio/scenario", (req, res, next) => {
   const requestId = getRequestId(req);

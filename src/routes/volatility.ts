@@ -9,6 +9,7 @@ export const volatilityRouter = Router();
 /**
  * POST /v1/volatility/surface
  * Protected by x402 paymentMiddleware (mounted in app.ts), unless SKIP_PAYMENT=1.
+ * Zod runs only after payment (or free-tier / SKIP_PAYMENT).
  */
 volatilityRouter.post("/v1/volatility/surface", (req, res, next) => {
   const requestId = getRequestId(req);
