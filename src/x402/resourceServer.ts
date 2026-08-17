@@ -2,21 +2,22 @@ import { x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { bazaarResourceServerExtension } from "@x402/extensions/bazaar";
-import type { HTTPFacilitatorClient } from "@x402/core/server";
+import type { FacilitatorClient } from "@x402/core/server";
 import type { AppConfig } from "../types.js";
 import { isEvmNetworkId, isSvmNetworkId } from "../config.js";
 
 /**
- * Build an x402 resource server and register exact schemes for enabled networks.
- * - EVM (Base): ExactEvmScheme
+ * Build an x402 resource server with one or more facilitators.
+ * - Earlier facilitators win network kinds (CDP before PayAI → Base on CDP).
+ * - EVM (Base): ExactEvmScheme (USDC 0x8335… + EIP-712 name/version on Base)
  * - SVM (Solana): ExactSvmScheme
- * Also registers the Bazaar resource-server extension for discovery enrichment.
  */
 export function createResourceServer(
-  facilitator: HTTPFacilitatorClient,
+  facilitators: FacilitatorClient | FacilitatorClient[],
   config: AppConfig,
 ): x402ResourceServer {
-  const server = new x402ResourceServer(facilitator);
+  const clients = Array.isArray(facilitators) ? facilitators : [facilitators];
+  const server = new x402ResourceServer(clients);
 
   let registeredEvm = false;
   let registeredSvm = false;
@@ -33,7 +34,6 @@ export function createResourceServer(
     }
   }
 
-  // Optional wildcards make multi-network facilitator responses more flexible
   if (registeredEvm) {
     server.register("eip155:*", new ExactEvmScheme());
   }

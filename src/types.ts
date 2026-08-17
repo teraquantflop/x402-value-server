@@ -76,7 +76,12 @@ export interface AppConfig {
   maxScenarios: number;
   networks: NetworkAlias[];
   networkIds: NetworkId[];
+  /** PayAI (or primary) facilitator URL */
   facilitatorUrl: string;
+  /** Coinbase CDP credentials (both required to enable CDP for Base). */
+  cdpApiKeyId?: string;
+  cdpApiKeySecret?: string;
+  cdpConfigured: boolean;
   publicBaseUrl: string;
   corsOrigin: string | string[];
   rateLimitWindowMs: number;
@@ -99,4 +104,14 @@ export interface AppConfig {
   mcpPath: string;
   serviceName: string;
   serviceVersion: string;
+}
+
+/** Public facilitator labels — never includes secrets or wallet addresses. */
+export interface FacilitatorStatus {
+  payai: boolean;
+  cdp: boolean;
+  /** Which facilitator handles Base mainnet accepts */
+  base: "cdp" | "payai" | "none";
+  /** Which facilitator handles Solana mainnet accepts */
+  solana: "payai" | "none";
 }

@@ -26,10 +26,14 @@ function printBanner(): void {
       ` portfolioGreeks=${config.pricePortfolioGreeksDollarString}` +
       ` portfolioScenario=${config.pricePortfolioScenarioDollarString}`,
   );
+  console.log(
+    `  facilitators: payai=yes cdp=${config.cdpConfigured ? "yes" : "no"}`,
+  );
   console.log(`  free routes:  GET /`);
   console.log(`                GET /health`);
   console.log(`                GET /openapi.json`);
   console.log(`                GET /llms.txt`);
+  console.log(`                GET /favicon.ico`);
   console.log(`                GET /.well-known/x402`);
   console.log(`                GET /.well-known/x402.json`);
   if (config.freeDemoEnabled) {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { config } from "../config.js";
+import { config, facilitatorStatus } from "../config.js";
 import { buildServiceCard, SERVICE_CATALOG } from "../discovery/catalog.js";
 import {
   OPTION_EXAMPLE_INPUT,
@@ -25,6 +25,7 @@ import {
 export const healthRouter = Router();
 
 healthRouter.get("/health", (_req, res) => {
+  // Never expose payTo / wallet addresses on free health (wallets only in 402).
   res.status(200).json({
     status: "ok",
     service: SERVICE_CATALOG.serviceName,
@@ -32,10 +33,7 @@ healthRouter.get("/health", (_req, res) => {
     version: config.serviceVersion,
     networks: config.networks,
     networkIds: config.networkIds,
-    facilitator: config.facilitatorUrl,
-    payTo: config.payToAddress,
-    payToEvm: config.payToEvm,
-    payToSvm: config.payToSvm,
+    facilitators: facilitatorStatus(config),
     prices: {
       optionPrice: config.priceDollarString,
       impliedVol: config.priceImpliedVolDollarString,

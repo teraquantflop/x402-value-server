@@ -41,8 +41,15 @@ function dualMainnetConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     idempotencyTtlMs: 300_000,
     trustProxy: false,
     skipPayment: false,
+    freeDemoEnabled: true,
+    freeDemoRateMax: 30,
+    freeTierN: 0,
+    freeTierWindowMs: 86_400_000,
+    mcpEnabled: true,
+    mcpPath: "/mcp",
+    cdpConfigured: false,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.3.0",
+    serviceVersion: "1.5.0",
     ...overrides,
   };
 }
@@ -57,40 +64,32 @@ describe("dual Solana + Base settlement discovery", () => {
     );
   });
 
-  it("service card lists both networks with per-network payTo", () => {
+  it("service card lists both networks without payTo wallets", () => {
     const card = buildServiceCard(config);
     expect(card.settlement.networks).toHaveLength(2);
 
     const sol = card.settlement.networks.find((n) => n.alias === "solana");
     const base = card.settlement.networks.find((n) => n.alias === "base");
     expect(sol?.caip2).toBe(NETWORK_MAP.solana);
-    expect(sol?.payTo).toBe(SOLANA_PAYTO);
+    expect((sol as { payTo?: string })?.payTo).toBeUndefined();
     expect(sol?.asset).toBe("USDC");
     expect(sol?.scheme).toBe("exact");
 
     expect(base?.caip2).toBe(NETWORK_MAP.base);
-    expect(base?.payTo.toLowerCase()).toBe(BASE_PAYTO.toLowerCase());
+    expect((base as { payTo?: string })?.payTo).toBeUndefined();
     expect(base?.asset).toBe("USDC");
     expect(base?.scheme).toBe("exact");
 
-    expect(card.settlement.payToSvm).toBe(SOLANA_PAYTO);
-    expect(card.settlement.payToEvm?.toLowerCase()).toBe(
-      BASE_PAYTO.toLowerCase(),
-    );
-    expect(card.settlement.facilitator).toBe(
-      "https://facilitator.payai.network",
-    );
+    expect(card.settlement.facilitators.payai).toBe(true);
+    expect(card.settlement.facilitators.base).toMatch(/cdp|payai/);
   });
 
-  it("well-known inherits dual settlement receivers", () => {
+  it("well-known inherits dual settlement without wallets", () => {
     const doc = buildWellKnownX402(config);
     expect(doc.settlement.networks).toHaveLength(2);
-    expect(doc.settlement.payToSvm).toBe(SOLANA_PAYTO);
-    expect(doc.settlement.payToEvm?.toLowerCase()).toBe(
-      BASE_PAYTO.toLowerCase(),
-    );
+    expect((doc.settlement as { payTo?: string }).payTo).toBeUndefined();
     for (const n of doc.settlement.networks) {
-      expect(n.payTo).toBeTruthy();
+      expect((n as { payTo?: string }).payTo).toBeUndefined();
       expect(n.asset).toBe("USDC");
       expect(n.scheme).toBe("exact");
     }

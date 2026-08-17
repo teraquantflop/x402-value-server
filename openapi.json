@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Derivatives Pricer",
-    "description": "x402-paid Black-Scholes European option pricing, analytic Greeks, IV surfaces, portfolio risk, free fixed demo, and MCP tool façade. USDC exact on Solana and/or Base. No API keys.",
-    "version": "1.4.0",
+    "description": "x402-paid Black-Scholes European option pricing, Greeks, IV surfaces, portfolio risk, free demo, and MCP. USDC exact on Solana (PayAI) and/or Base (CDP when configured). Receive wallets appear only in HTTP 402, never on free discovery.",
+    "version": "1.5.0",
     "contact": {
       "name": "Derivatives Pricer",
       "url": "https://derivatives-pricer-production.up.railway.app"
@@ -66,7 +66,7 @@
           "discovery"
         ],
         "summary": "Liveness probe",
-        "description": "Returns service status, networks, pricing snapshot, and payTo receivers. Free — no payment required.",
+        "description": "Returns service status, networks, facilitator labels, and pricing. Free — no wallets, no payment required.",
         "security": [],
         "x-free": true,
         "responses": {
@@ -1926,7 +1926,10 @@
     "protocol": "x402",
     "asset": "USDC",
     "scheme": "exact",
-    "facilitator": "https://facilitator.payai.network",
+    "facilitators": {
+      "payai": "https://facilitator.payai.network",
+      "cdp": "https://api.cdp.coinbase.com/platform/v2/x402"
+    },
     "networks": [
       {
         "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
@@ -1937,10 +1940,10 @@
         "caip2": "eip155:8453",
         "alias": "base",
         "name": "Base mainnet",
-        "payTo": "0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f"
+        "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
       }
     ],
-    "note": "Unpaid requests return HTTP 402 with accepts for each configured network. Clients may settle USDC on Solana or Base."
+    "note": "payTo is only in PAYMENT-REQUIRED, not on free OpenAPI/discovery documents."
   },
   "security": [
     {

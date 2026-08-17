@@ -10,8 +10,12 @@ describe("buildWellKnownX402", () => {
     expect(doc.name).toBeTruthy();
     expect(doc.url).toBe(config.publicBaseUrl.replace(/\/$/, ""));
     expect(doc.settlement.asset).toBe("USDC");
-    expect(doc.settlement.facilitator).toBe(config.facilitatorUrl);
-    expect(doc.settlement.payTo).toBe(config.payToAddress);
+    expect(doc.settlement.facilitators).toBeDefined();
+    expect(doc.settlement.facilitators.payai).toBe(true);
+    // Wallets must not appear on free well-known settlement
+    expect(
+      (doc.settlement as { payTo?: string }).payTo,
+    ).toBeUndefined();
     expect(doc.resources.length).toBeGreaterThanOrEqual(5);
 
     const paths = doc.resources.map((r) => r.path);

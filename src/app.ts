@@ -24,11 +24,15 @@ import { wellKnownRouter } from "./routes/wellKnown.js";
 import { openapiRouter, sendOpenApi } from "./routes/openapi.js";
 import { llmsTxtRouter, sendLlmsTxt } from "./routes/llmsTxt.js";
 import { demoRouter } from "./routes/demo.js";
+import { staticAssetsRouter } from "./routes/staticAssets.js";
 import { optionRouter } from "./routes/option.js";
 import { volatilityRouter } from "./routes/volatility.js";
 import { impliedVolRouter } from "./routes/impliedVol.js";
 import { portfolioRouter } from "./routes/portfolio.js";
-import { createFacilitatorClient } from "./x402/facilitator.js";
+import {
+  createFacilitatorClient,
+  createFacilitatorClients,
+} from "./x402/facilitator.js";
 import { createResourceServer } from "./x402/resourceServer.js";
 import { buildPaidRoutes } from "./x402/routeConfig.js";
 import { buildWellKnownX402 } from "./discovery/catalog.js";
@@ -56,6 +60,7 @@ function mountFreeDiscoveryRoutes(app: Express): void {
   app.use(openapiRouter);
   app.use(llmsTxtRouter);
   app.use(healthRouter);
+  app.use(staticAssetsRouter);
 
   if (config.freeDemoEnabled) {
     app.use(demoRouter);
@@ -89,8 +94,8 @@ export function createApp(): Express {
       "[warn] SKIP_PAYMENT=1 — x402 payment gate is DISABLED (local/debug only)",
     );
   } else {
-    const facilitator = createFacilitatorClient(config);
-    resourceServer = createResourceServer(facilitator, config);
+    const facilitators = createFacilitatorClients(config);
+    resourceServer = createResourceServer(facilitators, config);
     const paidRoutes = buildPaidRoutes(config);
     const payMw = paymentMiddleware(paidRoutes, resourceServer);
     // Payment first: unpaid → 402 before Zod / stashed JSON errors
@@ -103,8 +108,7 @@ export function createApp(): Express {
   // MCP façade (own payment via @x402/mcp; not in HTTP paid route map)
   if (config.mcpEnabled) {
     if (config.skipPayment) {
-      // resourceServer may be null — create a lightweight one for MCP structure
-      // createDerivativesMcpServer handles skipPayment without needing verify/settle
+      // Lightweight PayAI client for MCP structure when payment gate is off
       const facilitator = createFacilitatorClient(config);
       resourceServer = createResourceServer(facilitator, config);
     }

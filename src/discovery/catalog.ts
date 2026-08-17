@@ -7,9 +7,9 @@
  */
 import type { AppConfig } from "../types.js";
 import {
+  facilitatorStatus,
   isEvmNetworkId,
   isSvmNetworkId,
-  payToForNetwork,
 } from "../config.js";
 
 export const SERVICE_CATALOG = {
@@ -326,7 +326,10 @@ export function buildServiceCard(config: AppConfig) {
       firstNOnOptionPrice: config.freeTierN,
       windowMs: config.freeTierWindowMs,
     },
+    iconUrl: `${base}/favicon.ico`,
     settlement: {
+      // Public discovery: network ids + asset labels only — never payTo wallets.
+      // Full payTo + asset contract + EIP-712 extra appear only in HTTP 402.
       networks: config.networks.map((alias, i) => {
         const caip2 = config.networkIds[i]!;
         return {
@@ -334,16 +337,12 @@ export function buildServiceCard(config: AppConfig) {
           caip2,
           asset: "USDC" as const,
           scheme: "exact" as const,
-          payTo: payToForNetwork(config, caip2),
         };
       }),
-      facilitator: config.facilitatorUrl,
-      /** Primary payTo (back-compat); prefer per-network `networks[].payTo`. */
-      payTo: config.payToAddress,
-      payToEvm: config.payToEvm,
-      payToSvm: config.payToSvm,
+      facilitators: facilitatorStatus(config),
       note:
-        "No API keys. Clients may pay USDC on any listed network (exact scheme); pick the matching accept from the 402 PAYMENT-REQUIRED header.",
+        "No API keys. Clients may pay USDC on any listed network (exact scheme). " +
+        "Receive addresses appear only in the 402 PAYMENT-REQUIRED protocol payload, not on free discovery.",
     },
     endpoints: {
       free: [
@@ -514,10 +513,7 @@ export function buildWellKnownX402(config: AppConfig) {
       scheme: "exact",
       asset: "USDC",
       networks: card.settlement.networks,
-      facilitator: card.settlement.facilitator,
-      payTo: card.settlement.payTo,
-      payToEvm: card.settlement.payToEvm,
-      payToSvm: card.settlement.payToSvm,
+      facilitators: card.settlement.facilitators,
       note: card.settlement.note,
     },
     links: {
@@ -526,6 +522,7 @@ export function buildWellKnownX402(config: AppConfig) {
       wellKnown: `${base}/.well-known/x402.json`,
       openapi: `${base}/openapi.json`,
       llmsTxt: `${base}/llms.txt`,
+      favicon: `${base}/favicon.ico`,
       freeDemo: config.freeDemoEnabled
         ? `${base}/v1/demo/option-price`
         : undefined,

@@ -419,27 +419,34 @@ Works **without** API keys. **Testnet only** (Base Sepolia + Solana Devnet).
 
 ### Solana + Base mainnet (recommended production)
 
-PayAI supports **both** Solana mainnet and Base mainnet with **no API keys**. Configure dual networks so every 402 challenge offers **two** accepts (client pays USDC on either chain):
+**Dual facilitators (pjm-nowcast parity):**
+
+| Chain | Facilitator | Env |
+|-------|-------------|-----|
+| Solana mainnet | **PayAI** | `FACILITATOR_URL=https://facilitator.payai.network` |
+| Base mainnet | **Coinbase CDP** (preferred) | `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` |
+| Base (fallback) | PayAI if CDP unset | — |
 
 ```bash
-FACILITATOR_URL=https://facilitator.payai.network
 NETWORKS=solana,base
 PAY_TO_ADDRESS=YourSolanaBase58Address
-PAY_TO_SVM_ADDRESS=YourSolanaBase58Address   # optional explicit
-PAY_TO_EVM_ADDRESS=0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f
+PAY_TO_SVM_ADDRESS=YourSolanaBase58Address
+PAY_TO_EVM_ADDRESS=0xYourBaseReceiveAddress
+FACILITATOR_URL=https://facilitator.payai.network
+CDP_API_KEY_ID=...          # Railway secret
+CDP_API_KEY_SECRET=...      # Railway secret
 ```
+
+Same logical prices on both networks (e.g. option `$0.01`, surface `$0.10`). Base 402 accepts use USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` with EIP-712 `extra: { name: "USD Coin", version: "2" }` (via `@x402/evm` ExactEvmScheme).
+
+**Wallet hygiene:** receive addresses (`payTo`) appear **only** in HTTP **402** `PAYMENT-REQUIRED`. Free routes (`/health`, `/`, well-known, OpenAPI, llms.txt, demo) never echo wallets.
 
 Single-chain mainnet still works:
 
 ```bash
-# Solana only
 NETWORKS=solana
 PAY_TO_ADDRESS=YourSolanaBase58Address
-
-# Base only
-NETWORKS=base
-PAY_TO_ADDRESS=0xYourEvmAddress
-# or PAY_TO_EVM_ADDRESS=0x...
+# or NETWORKS=base + PAY_TO_EVM_ADDRESS=0x...
 ```
 
 ### CDP facilitator
@@ -629,17 +636,24 @@ Then set `PUBLIC_BASE_URL` to that `https://…` URL and redeploy if needed.
 ### 4. Smoke-check production
 
 ```bash
-curl -sS https://YOUR_APP.up.railway.app/health | jq
-curl -sS https://YOUR_APP.up.railway.app/v1/demo/option-price | jq '.price,.demo'
-# Expect: 200, demo=true, real BSM price
+BASE=https://YOUR_APP.up.railway.app
 
-curl -sS -D - -o /dev/null -X POST https://YOUR_APP.up.railway.app/v1/option/price \
-  -H 'Content-Type: application/json' \
-  -d '{"spot":100,"strike":100,"timeToExpiry":1,"rate":0.05,"volatility":0.2,"optionType":"call"}'
-# Expect: HTTP 402 and a PAYMENT-REQUIRED header (unless FREE_TIER_N still has quota)
+curl -sS $BASE/health | jq .
+# Expect: networks, facilitators.{payai,cdp,base,solana} — NO payTo / receive wallets
 
-curl -sS https://YOUR_APP.up.railway.app/llms.txt | head
-# Optional: FREE_TIER_N=5 for first-week crawler soft-free on /v1/option/price only
+curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' $BASE/favicon.ico
+# Expect: 200
+
+curl -sS $BASE/v1/demo/option-price | jq '.price,.demo'
+# Expect: 200, demo=true
+
+curl -sS -D - -o /dev/null -X POST $BASE/v1/option/price \
+  -H 'Content-Type: application/json' -d '{}'
+# Expect: 402 + PAYMENT-REQUIRED
+# Decode header (base64 JSON): Base accept has asset 0x8335…, extra.name/version;
+# Solana accept present when NETWORKS includes solana; payTo only here.
+
+# Optional paid: npm run client with funded EVM and/or SVM key
 ```
 
 Local paid tests still use a **local** key:

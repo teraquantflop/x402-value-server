@@ -108,7 +108,11 @@ const envSchema = z.object({
     .default(100),
   MAX_SCENARIOS: z.coerce.number().int().min(1).max(100).default(20),
   NETWORKS: z.string().default("base-sepolia"),
-  FACILITATOR_URL: z.string().url().default("https://x402.org/facilitator"),
+  /** PayAI / primary facilitator (Solana; Base fallback when CDP unset). */
+  FACILITATOR_URL: z.string().url().default("https://facilitator.payai.network"),
+  /** Coinbase CDP facilitator credentials for Base mainnet (optional). */
+  CDP_API_KEY_ID: z.string().optional(),
+  CDP_API_KEY_SECRET: z.string().optional(),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:4021"),
   CORS_ORIGIN: z.string().default("*"),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -259,6 +263,15 @@ function loadConfig(): AppConfig {
     );
   }
 
+  const cdpId = (env.CDP_API_KEY_ID ?? "").trim();
+  const cdpSecret = (env.CDP_API_KEY_SECRET ?? "").trim();
+  if (Boolean(cdpId) !== Boolean(cdpSecret)) {
+    console.warn(
+      "[warn] CDP_API_KEY_ID and CDP_API_KEY_SECRET must both be set; ignoring CDP",
+    );
+  }
+  const cdpConfigured = Boolean(cdpId && cdpSecret);
+
   return {
     port: env.PORT,
     nodeEnv: env.NODE_ENV,
@@ -285,6 +298,9 @@ function loadConfig(): AppConfig {
     networks,
     networkIds,
     facilitatorUrl: env.FACILITATOR_URL.replace(/\/$/, ""),
+    cdpApiKeyId: cdpConfigured ? cdpId : undefined,
+    cdpApiKeySecret: cdpConfigured ? cdpSecret : undefined,
+    cdpConfigured,
     publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/$/, ""),
     corsOrigin,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
@@ -299,7 +315,24 @@ function loadConfig(): AppConfig {
     mcpEnabled: env.MCP_ENABLED !== false,
     mcpPath: env.MCP_PATH,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.4.0",
+    serviceVersion: "1.5.0",
+  };
+}
+
+/** Public facilitator readiness labels (no secrets, no wallets). */
+export function facilitatorStatus(
+  config: AppConfig,
+): import("./types.js").FacilitatorStatus {
+  const hasBase = config.networks.includes("base");
+  const hasSolana =
+    config.networks.includes("solana") ||
+    config.networks.includes("solana-devnet");
+  const cdp = config.cdpConfigured;
+  return {
+    payai: true,
+    cdp,
+    base: hasBase ? (cdp ? "cdp" : "payai") : "none",
+    solana: hasSolana ? "payai" : "none",
   };
 }
 

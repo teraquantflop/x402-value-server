@@ -100,7 +100,7 @@ describe("multi-network 402 accepts (Solana + Base)", () => {
     });
   });
 
-  it("GET /health exposes both networks and both payTos", async () => {
+  it("GET /health exposes both networks without wallets", async () => {
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -108,30 +108,32 @@ describe("multi-network 402 accepts (Solana + Base)", () => {
       networkIds: string[];
       payToEvm?: string;
       payToSvm?: string;
+      facilitators?: { payai?: boolean; base?: string };
     };
     expect(body.networks).toEqual(expect.arrayContaining(["solana", "base"]));
     expect(body.networkIds).toEqual(
       expect.arrayContaining([SOLANA_CAIP2, BASE_CAIP2]),
     );
-    expect(body.payToSvm).toBe(SOLANA_PAYTO);
-    expect(body.payToEvm?.toLowerCase()).toBe(BASE_PAYTO.toLowerCase());
+    expect(body.payToSvm).toBeUndefined();
+    expect(body.payToEvm).toBeUndefined();
+    expect(body.facilitators?.payai).toBe(true);
   });
 
-  it("well-known settlement includes per-network payTo", async () => {
+  it("well-known settlement lists networks without payTo", async () => {
     const res = await fetch(`${baseUrl}/.well-known/x402.json`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       settlement: {
-        networks: { alias: string; caip2: string; payTo: string }[];
-        payToEvm?: string;
-        payToSvm?: string;
+        networks: { alias: string; caip2: string; payTo?: string }[];
+        facilitators?: { payai?: boolean };
       };
     };
     expect(body.settlement.networks.length).toBe(2);
-    const sol = body.settlement.networks.find((n) => n.alias === "solana");
-    const base = body.settlement.networks.find((n) => n.alias === "base");
-    expect(sol?.payTo).toBe(SOLANA_PAYTO);
-    expect(base?.payTo.toLowerCase()).toBe(BASE_PAYTO.toLowerCase());
+    for (const n of body.settlement.networks) {
+      expect(n.payTo).toBeUndefined();
+      expect(n.caip2).toBeTruthy();
+    }
+    expect(body.settlement.facilitators?.payai).toBe(true);
   });
 
   it("unpaid POST /v1/option/price 402 accepts Solana and Base", async () => {
@@ -187,10 +189,32 @@ describe("multi-network 402 accepts (Solana + Base)", () => {
     );
 
     const sol = accepts.find((a) => a.network === SOLANA_CAIP2);
-    const base = accepts.find((a) => a.network === BASE_CAIP2);
+    const base = accepts.find((a) => a.network === BASE_CAIP2) as
+      | (AcceptRequirement & {
+          asset?: string;
+          extra?: { name?: string; version?: string };
+          amount?: string;
+        })
+      | undefined;
     expect(sol?.scheme).toBe("exact");
     expect(base?.scheme).toBe("exact");
     expect(sol?.payTo).toBe(SOLANA_PAYTO);
     expect(String(base?.payTo).toLowerCase()).toBe(BASE_PAYTO.toLowerCase());
+    // Base EIP-712 domain params required by @x402/fetch + CDP clients
+    expect(base?.asset?.toLowerCase()).toBe(
+      "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    );
+    expect(base?.extra?.name).toBe("USD Coin");
+    expect(base?.extra?.version).toBe("2");
+  });
+
+  it("unpaid POST /v1/volatility/surface also returns dual 402 accepts", async () => {
+    const res = await fetch(`${baseUrl}/v1/volatility/surface`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rate: 0.05, options: [] }),
+    });
+    // empty options may 402 before validation
+    expect(res.status).toBe(402);
   });
 });

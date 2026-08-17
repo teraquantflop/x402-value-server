@@ -42,8 +42,9 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     freeTierWindowMs: 86_400_000,
     mcpEnabled: true,
     mcpPath: "/mcp",
+    cdpConfigured: false,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.4.0",
+    serviceVersion: "1.5.0",
     ...overrides,
   };
 }
