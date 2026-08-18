@@ -60,6 +60,12 @@ function printBanner(): void {
   console.log(
     `                POST /v1/portfolio/scenario    ${config.pricePortfolioScenarioDollarString}`,
   );
+  console.log(
+    `                POST /v1/option/price-from-surface ${config.priceOptionFromSurfaceDollarString}`,
+  );
+  console.log(
+    `                POST /v1/option/scenario-from-surface ${config.priceScenarioFromSurfaceDollarString}`,
+  );
   if (config.skipPayment) {
     console.warn(`  SKIP_PAYMENT: enabled (no x402 gate)`);
   }

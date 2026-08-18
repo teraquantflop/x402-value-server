@@ -1,8 +1,8 @@
 ---
 name: derivatives-pricer
 title: "Derivatives Pricer"
-description: "x402-paid Black-Scholes European option pricing, full analytic Greeks, single-premium IV, IV surfaces, portfolio net Greeks, and scenario reprice. JSON APIs for agents; USDC on Solana mainnet or Base mainnet via PayAI facilitator."
-use_case: "Use for option fair value, delta/vega hedging, IV from premiums, portfolio Greeks, scenario P&L, commodity/power/equity European risk in agent trading workflows."
+description: "x402-paid Black-Scholes European option pricing, full analytic Greeks, single-premium IV, IV surfaces, price/scenario on submitted smiles, portfolio net Greeks, and scenario reprice. JSON APIs for agents; USDC on Solana mainnet or Base mainnet via PayAI facilitator."
+use_case: "Use for option fair value, delta/vega hedging, IV from premiums, pricing on a smile, sticky surface scenarios, portfolio Greeks, scenario P&L, commodity/power/equity European risk in agent trading workflows."
 category: finance
 service_url: https://derivatives-pricer-production.up.railway.app
 version: v1
@@ -21,8 +21,10 @@ OpenAPI: see co-located `openapi.json` (request examples are suitable for `pay c
 | `POST` | `/v1/option/price` | $0.01 | BSM fair value + full analytic Greeks |
 | `POST` | `/v1/option/implied-vol` | $0.03 | Solve IV from one market premium + Greeks |
 | `POST` | `/v1/volatility/surface` | $0.10 | IV surface + per-quote IV/Greeks from market premiums |
+| `POST` | `/v1/option/price-from-surface` | $0.08 | Price options on a submitted IV surface (TV bilinear) |
+| `POST` | `/v1/option/scenario-from-surface` | $0.15 | Book reval on surface + sticky smile shocks |
 | `POST` | `/v1/portfolio/greeks` | $0.15 | Net MTM + Greeks for multi-leg books |
-| `POST` | `/v1/portfolio/scenario` | $0.25 | Scenario reprice (spot/vol/time shocks) |
+| `POST` | `/v1/portfolio/scenario` | $0.25 | Scenario reprice (scalar spot/vol/time shocks) |
 | `GET` | `/` | free | Agent service card (capabilities, examples) |
 | `GET` | `/health` | free | Liveness |
 
@@ -80,6 +82,62 @@ Shared `rate` / `dividendYield`; each option has its own `underlying`.
       "premium": 8.67399132
     }
   ]
+}
+```
+
+### `POST /v1/option/price-from-surface` — $0.08 USDC
+
+Price options on a submitted IV surface. `surfaceConvention=log_moneyness_forward`, `interpolation=total_variance_bilinear` (\(w=\sigma^2 T\)), `wingRule=flat_vol`. Caps: 200 surface points, 50 options.
+
+```json
+{
+  "surfaceConvention": "log_moneyness_forward",
+  "rate": 0.05,
+  "dividendYield": 0,
+  "surface": [
+    { "k": -0.1, "timeToExpiry": 1, "iv": 0.205 },
+    { "k": 0, "timeToExpiry": 1, "iv": 0.2 },
+    { "k": 0.1, "timeToExpiry": 1, "iv": 0.215 }
+  ],
+  "options": [
+    {
+      "underlying": 100,
+      "strike": 100,
+      "timeToExpiry": 1,
+      "optionType": "call",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+### `POST /v1/option/scenario-from-surface` — $0.15 USDC
+
+Base vs scenario on the same interpolator. Sticky: `moneyness` | `strike` | `fixed_vol`. Vol order: interpolate → `volAbs` → `volRel` → `smileTwist * k`. Reject if both `underlyingRel` and `underlyingAbs` set.
+
+```json
+{
+  "surfaceConvention": "log_moneyness_forward",
+  "rate": 0.05,
+  "sticky": "moneyness",
+  "surface": [
+    { "k": -0.1, "timeToExpiry": 1, "iv": 0.205 },
+    { "k": 0, "timeToExpiry": 1, "iv": 0.2 },
+    { "k": 0.1, "timeToExpiry": 1, "iv": 0.215 }
+  ],
+  "positions": [
+    {
+      "underlying": 100,
+      "strike": 100,
+      "timeToExpiry": 1,
+      "optionType": "call",
+      "quantity": 1
+    }
+  ],
+  "scenario": {
+    "underlyingRel": 0.1,
+    "smileTwist": 0
+  }
 }
 ```
 
@@ -174,7 +232,8 @@ Unpaid paid-path calls return **402**. Decode `PAYMENT-REQUIRED` (base64 JSON) f
 ## Spend-aware usage
 
 - Prefer `/v1/option/price` for single contracts; `/v1/option/implied-vol` for one-premium IV; use `/v1/volatility/surface` only for book-level IV grids.
-- Use `/v1/portfolio/greeks` for net risk; `/v1/portfolio/scenario` for what-if P&L (higher price).
-- Cap surface `options` and portfolio `positions`/`scenarios` to the smallest set that answers the task.
+- Use `/v1/option/price-from-surface` when you already have a smile; `/v1/option/scenario-from-surface` for sticky smile book reval.
+- Use `/v1/portfolio/greeks` for net risk; `/v1/portfolio/scenario` for scalar-σ what-if P&L (higher price).
+- Cap surface points/options and portfolio `positions`/`scenarios` to the smallest set that answers the task.
 - Reuse `Idempotency-Key` on retries after successful payment.
 - Keep premiums and underlyings in consistent units (e.g. USD/MWh, USD/bbl, index points).

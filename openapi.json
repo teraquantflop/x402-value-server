@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Derivatives Pricer",
-    "description": "x402-paid Black-Scholes European option pricing, Greeks, IV surfaces, portfolio risk, free demo, and MCP. USDC exact on Solana (PayAI) and/or Base (CDP when configured). Receive wallets appear only in HTTP 402, never on free discovery.",
-    "version": "1.5.0",
+    "description": "x402-paid Black-Scholes European option pricing, Greeks, IV surfaces, price/scenario on submitted smiles (TV bilinear), portfolio risk, free demo, and MCP. USDC exact on Solana (PayAI) and/or Base (CDP when configured). Receive wallets appear only in HTTP 402, never on free discovery.",
+    "version": "1.6.0",
     "contact": {
       "name": "Derivatives Pricer",
       "url": "https://derivatives-pricer-production.up.railway.app"
@@ -23,6 +23,10 @@
     {
       "name": "volatility",
       "description": "Implied volatility surface from market premiums"
+    },
+    {
+      "name": "surface",
+      "description": "Price and scenario reval on a submitted IV surface (log-moneyness total-variance bilinear)"
     },
     {
       "name": "portfolio",
@@ -1080,6 +1084,518 @@
           }
         ]
       }
+    },
+    "/v1/option/price-from-surface": {
+      "post": {
+        "operationId": "priceFromSurface",
+        "tags": [
+          "options",
+          "surface"
+        ],
+        "summary": "Price options on a submitted IV surface",
+        "description": "Price one or more European options on a submitted implied-vol surface. Convention: log_moneyness_forward with k=ln(K/F). Interpolation: total_variance_bilinear (w=σ²T in k,T). wingRule=flat_vol (clamp to edge vol; no wing model). Caps: MAX_SURFACE_POINTS / MAX_SURFACE_PRICE_OPTIONS. Paid via x402: $0.08 USDC per request. Prefer /v1/option/price for scalar σ.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional key for safe retries of a paid request"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceFromSurfaceRequest"
+              },
+              "examples": {
+                "equitySmile": {
+                  "summary": "3×3 equity-like smile in (k,T)",
+                  "value": {
+                    "surfaceConvention": "log_moneyness_forward",
+                    "interpolation": "total_variance_bilinear",
+                    "wingRule": "flat_vol",
+                    "rate": 0.05,
+                    "dividendYield": 0,
+                    "surface": [
+                      {
+                        "k": -0.1,
+                        "timeToExpiry": 0.25,
+                        "iv": 0.22
+                      },
+                      {
+                        "k": 0,
+                        "timeToExpiry": 0.25,
+                        "iv": 0.2
+                      },
+                      {
+                        "k": 0.1,
+                        "timeToExpiry": 0.25,
+                        "iv": 0.23
+                      },
+                      {
+                        "k": -0.1,
+                        "timeToExpiry": 0.5,
+                        "iv": 0.21
+                      },
+                      {
+                        "k": 0,
+                        "timeToExpiry": 0.5,
+                        "iv": 0.2
+                      },
+                      {
+                        "k": 0.1,
+                        "timeToExpiry": 0.5,
+                        "iv": 0.22
+                      },
+                      {
+                        "k": -0.1,
+                        "timeToExpiry": 1,
+                        "iv": 0.205
+                      },
+                      {
+                        "k": 0,
+                        "timeToExpiry": 1,
+                        "iv": 0.2
+                      },
+                      {
+                        "k": 0.1,
+                        "timeToExpiry": 1,
+                        "iv": 0.215
+                      }
+                    ],
+                    "options": [
+                      {
+                        "underlying": 100,
+                        "strike": 100,
+                        "timeToExpiry": 1,
+                        "optionType": "call",
+                        "quantity": 1
+                      }
+                    ]
+                  }
+                },
+                "commodityForwards": {
+                  "summary": "Commodity/power-style strike+underlying points (converted to k server-side)",
+                  "value": {
+                    "surfaceConvention": "log_moneyness_forward",
+                    "interpolation": "total_variance_bilinear",
+                    "wingRule": "flat_vol",
+                    "rate": 0.04,
+                    "dividendYield": 0.02,
+                    "surface": [
+                      {
+                        "strike": 45,
+                        "underlying": 50,
+                        "timeToExpiry": 0.25,
+                        "iv": 0.35
+                      },
+                      {
+                        "strike": 50,
+                        "underlying": 50,
+                        "timeToExpiry": 0.25,
+                        "iv": 0.3
+                      },
+                      {
+                        "strike": 55,
+                        "underlying": 50,
+                        "timeToExpiry": 0.25,
+                        "iv": 0.32
+                      },
+                      {
+                        "strike": 45,
+                        "underlying": 52,
+                        "timeToExpiry": 0.5,
+                        "iv": 0.33
+                      },
+                      {
+                        "strike": 50,
+                        "underlying": 52,
+                        "timeToExpiry": 0.5,
+                        "iv": 0.28
+                      },
+                      {
+                        "strike": 55,
+                        "underlying": 52,
+                        "timeToExpiry": 0.5,
+                        "iv": 0.3
+                      }
+                    ],
+                    "options": [
+                      {
+                        "underlying": 50,
+                        "strike": 50,
+                        "timeToExpiry": 0.25,
+                        "optionType": "call",
+                        "quantity": 1,
+                        "id": "pwr-atm-q1"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-option price, interpolated σ, k, F, BS Greeks (after x402 settlement)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceFromSurfaceResponse"
+                },
+                "example": {
+                  "results": [
+                    {
+                      "index": 0,
+                      "underlying": 100,
+                      "strike": 100,
+                      "timeToExpiry": 1,
+                      "optionType": "call",
+                      "quantity": 1,
+                      "forward": 100,
+                      "k": 0,
+                      "impliedVol": 0.2,
+                      "price": 10.45057562,
+                      "greeks": {
+                        "delta": 0.63683059,
+                        "gamma": 0.01876202,
+                        "vega": 37.52403469,
+                        "theta": -6.41402764,
+                        "rho": 53.23248343
+                      },
+                      "contribution": 10.45057562
+                    }
+                  ],
+                  "book": {
+                    "mtm": 10.45057562,
+                    "greeks": {
+                      "delta": 0.63683059,
+                      "gamma": 0.01876202,
+                      "vega": 37.52403469,
+                      "theta": -6.41402764,
+                      "rho": 53.23248343
+                    }
+                  },
+                  "units": {
+                    "price": "option value in spot currency units",
+                    "delta": "dV/dS (share equivalent) at sticky/interpolated σ",
+                    "gamma": "d²V/dS²",
+                    "vega": "dV/dσ per 1.0 absolute volatility (not per 1%)",
+                    "theta": "dV/dT per year (not per day)",
+                    "rho": "dV/dr per 1.0 absolute rate (not per 1%)"
+                  },
+                  "surfaceMeta": {
+                    "pointCount": 9,
+                    "kCount": 3,
+                    "tCount": 3,
+                    "convention": "log_moneyness_forward",
+                    "interpolation": "total_variance_bilinear",
+                    "wingRule": "flat_vol"
+                  },
+                  "warnings": [],
+                  "model": "black-scholes-merton+surface-tv-bilinear",
+                  "requestId": "00000000-0000-4000-8000-000000000006",
+                  "computedAt": "2026-01-01T00:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402). Decode PAYMENT-REQUIRED header (base64 JSON) for accepts[] — Solana mainnet and/or Base mainnet USDC exact, amount, and payTo.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "description": "Base64-encoded x402 payment requirements (v2)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequiredBody"
+                }
+              }
+            }
+          }
+        },
+        "x-pricing": {
+          "currency": "USDC",
+          "price_usd": 0.08,
+          "unit": "request",
+          "scheme": "exact",
+          "networks": [
+            "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            "eip155:8453"
+          ]
+        },
+        "security": [
+          {
+            "x402": []
+          }
+        ]
+      }
+    },
+    "/v1/option/scenario-from-surface": {
+      "post": {
+        "operationId": "scenarioFromSurface",
+        "tags": [
+          "options",
+          "surface",
+          "portfolio"
+        ],
+        "summary": "Book reval on IV surface with sticky smile shocks",
+        "description": "Revalue a book on a submitted IV surface: base vs scenario on the same total-variance bilinear interpolator. Sticky: moneyness (default) | strike | fixed_vol. Shocks: underlyingRel XOR underlyingAbs, rateBp, timeDays, volAbs, volRel, smileTwist (vol points per unit k). Vol order: interpolate → volAbs → volRel → smileTwist*k. Greeks are sticky-σ BS Greeks (NOT full smile bump deltas). Paid via x402: $0.15 USDC. Prefer /v1/portfolio/scenario for scalar-σ books.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional key for safe retries of a paid request"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioFromSurfaceRequest"
+              },
+              "example": {
+                "surfaceConvention": "log_moneyness_forward",
+                "interpolation": "total_variance_bilinear",
+                "wingRule": "flat_vol",
+                "rate": 0.05,
+                "dividendYield": 0,
+                "surface": [
+                  {
+                    "k": -0.1,
+                    "timeToExpiry": 0.25,
+                    "iv": 0.22
+                  },
+                  {
+                    "k": 0,
+                    "timeToExpiry": 0.25,
+                    "iv": 0.2
+                  },
+                  {
+                    "k": 0.1,
+                    "timeToExpiry": 0.25,
+                    "iv": 0.23
+                  },
+                  {
+                    "k": -0.1,
+                    "timeToExpiry": 0.5,
+                    "iv": 0.21
+                  },
+                  {
+                    "k": 0,
+                    "timeToExpiry": 0.5,
+                    "iv": 0.2
+                  },
+                  {
+                    "k": 0.1,
+                    "timeToExpiry": 0.5,
+                    "iv": 0.22
+                  },
+                  {
+                    "k": -0.1,
+                    "timeToExpiry": 1,
+                    "iv": 0.205
+                  },
+                  {
+                    "k": 0,
+                    "timeToExpiry": 1,
+                    "iv": 0.2
+                  },
+                  {
+                    "k": 0.1,
+                    "timeToExpiry": 1,
+                    "iv": 0.215
+                  }
+                ],
+                "sticky": "moneyness",
+                "positions": [
+                  {
+                    "underlying": 100,
+                    "strike": 100,
+                    "timeToExpiry": 1,
+                    "optionType": "call",
+                    "quantity": 1
+                  }
+                ],
+                "scenario": {
+                  "underlyingRel": 0.1,
+                  "rateBp": 0,
+                  "timeDays": 0,
+                  "volAbs": 0,
+                  "volRel": 0,
+                  "smileTwist": 0
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-leg and book base/scenario values, sticky-σ Greeks, scenario echo, warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioFromSurfaceResponse"
+                },
+                "example": {
+                  "sticky": "moneyness",
+                  "scenario": {
+                    "underlyingRel": 0.1,
+                    "rateBp": 0,
+                    "timeDays": 0,
+                    "volAbs": 0,
+                    "volRel": 0,
+                    "smileTwist": 0,
+                    "rateScenario": 0.05
+                  },
+                  "legs": [
+                    {
+                      "index": 0,
+                      "quantity": 1,
+                      "optionType": "call",
+                      "strike": 100,
+                      "base": {
+                        "underlying": 100,
+                        "timeToExpiry": 1,
+                        "forward": 100,
+                        "k": 0,
+                        "impliedVol": 0.2,
+                        "price": 10.45057562,
+                        "greeks": {
+                          "delta": 0.63683059,
+                          "gamma": 0.01876202,
+                          "vega": 37.52403469,
+                          "theta": -6.41402764,
+                          "rho": 53.23248343
+                        },
+                        "contribution": 10.45057562
+                      },
+                      "scenario": {
+                        "underlying": 110,
+                        "timeToExpiry": 1,
+                        "forward": 110,
+                        "k": -0.09531018,
+                        "impliedVol": 0.20476824,
+                        "price": 17.8125541,
+                        "greeks": {
+                          "delta": 0.79160899,
+                          "gamma": 0.01273721,
+                          "vega": 31.55892407,
+                          "theta": -6.69435438,
+                          "rho": 69.26443492
+                        },
+                        "contribution": 17.8125541
+                      },
+                      "deltaValue": 7.36197848
+                    }
+                  ],
+                  "book": {
+                    "valueBase": 10.45057562,
+                    "valueScenario": 17.8125541,
+                    "deltaValue": 7.36197848,
+                    "greeksBase": {
+                      "delta": 0.63683059,
+                      "gamma": 0.01876202,
+                      "vega": 37.52403469,
+                      "theta": -6.41402764,
+                      "rho": 53.23248343
+                    },
+                    "greeksScenario": {
+                      "delta": 0.79160899,
+                      "gamma": 0.01273721,
+                      "vega": 31.55892407,
+                      "theta": -6.69435438,
+                      "rho": 69.26443492
+                    },
+                    "greeksNote": "Greeks are analytic BS Greeks at sticky/scenario σ — NOT full smile-recalibrated bump deltas"
+                  },
+                  "surfaceMeta": {
+                    "pointCount": 9,
+                    "kCount": 3,
+                    "tCount": 3,
+                    "convention": "log_moneyness_forward"
+                  },
+                  "warnings": [],
+                  "model": "black-scholes-merton+surface-tv-bilinear",
+                  "requestId": "00000000-0000-4000-8000-000000000007",
+                  "computedAt": "2026-01-01T00:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402). Decode PAYMENT-REQUIRED header (base64 JSON) for accepts[] — Solana mainnet and/or Base mainnet USDC exact, amount, and payTo.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "description": "Base64-encoded x402 payment requirements (v2)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequiredBody"
+                }
+              }
+            }
+          }
+        },
+        "x-pricing": {
+          "currency": "USDC",
+          "price_usd": 0.15,
+          "unit": "request",
+          "scheme": "exact",
+          "networks": [
+            "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            "eip155:8453"
+          ]
+        },
+        "security": [
+          {
+            "x402": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1909,6 +2425,354 @@
           },
           "computedAt": {
             "type": "string"
+          }
+        }
+      },
+      "SurfacePointK": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "k",
+          "timeToExpiry",
+          "iv"
+        ],
+        "properties": {
+          "k": {
+            "type": "number",
+            "description": "Log-moneyness k = ln(K/F)"
+          },
+          "timeToExpiry": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Tenor T in years"
+          },
+          "iv": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Implied vol σ > 0"
+          }
+        }
+      },
+      "SurfacePointStrike": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "strike",
+          "underlying",
+          "timeToExpiry",
+          "iv"
+        ],
+        "properties": {
+          "strike": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "underlying": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Forward or spot-as-forward F for this point"
+          },
+          "timeToExpiry": {
+            "type": "number",
+            "minimum": 0
+          },
+          "iv": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "SurfacePricingPoint": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SurfacePointK"
+          },
+          {
+            "$ref": "#/components/schemas/SurfacePointStrike"
+          }
+        ],
+        "description": "Surface node as (k,T,iv) or (strike,underlying,T,iv) converted server-side to k=ln(K/F)"
+      },
+      "SurfacePricingLeg": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "underlying",
+          "strike",
+          "timeToExpiry",
+          "optionType"
+        ],
+        "properties": {
+          "underlying": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Forward mark or spot used as F for moneyness and as BS spot"
+          },
+          "strike": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "timeToExpiry": {
+            "type": "number",
+            "minimum": 0
+          },
+          "optionType": {
+            "$ref": "#/components/schemas/OptionType"
+          },
+          "quantity": {
+            "type": "number",
+            "default": 1
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      },
+      "PriceFromSurfaceRequest": {
+        "type": "object",
+        "title": "PriceFromSurfaceRequest",
+        "description": "Price European options on a submitted IV surface via total-variance bilinear interpolation in log-moneyness k=ln(K/F). Duplicate (k,T) rejected. Soft warnings for calendar/butterfly issues; grid is not repaired.",
+        "additionalProperties": false,
+        "required": [
+          "surfaceConvention",
+          "rate",
+          "surface",
+          "options"
+        ],
+        "properties": {
+          "surfaceConvention": {
+            "type": "string",
+            "const": "log_moneyness_forward",
+            "description": "Only log_moneyness_forward is supported in v1"
+          },
+          "interpolation": {
+            "type": "string",
+            "const": "total_variance_bilinear",
+            "default": "total_variance_bilinear"
+          },
+          "wingRule": {
+            "type": "string",
+            "const": "flat_vol",
+            "default": "flat_vol",
+            "description": "Clamp to nearest edge vol; no wing model invented"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "dividendYield": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "surface": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/SurfacePricingPoint"
+            }
+          },
+          "options": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/SurfacePricingLeg"
+            }
+          }
+        }
+      },
+      "ScenarioShockSurface": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "All fields optional (default 0). underlyingRel XOR underlyingAbs — reject if both set. Vol order: interpolate → volAbs → volRel → smileTwist*k.",
+        "properties": {
+          "underlyingRel": {
+            "type": "number",
+            "description": "Relative F shock applied to every leg"
+          },
+          "underlyingAbs": {
+            "type": "number",
+            "description": "Absolute F shock (alternative to underlyingRel)"
+          },
+          "rateBp": {
+            "type": "number",
+            "default": 0,
+            "description": "Rate shock in basis points"
+          },
+          "timeDays": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Roll each T by timeDays/365 (floor at small epsilon), then interpolate σ"
+          },
+          "volAbs": {
+            "type": "number",
+            "default": 0,
+            "description": "Add to interpolated σ"
+          },
+          "volRel": {
+            "type": "number",
+            "default": 0,
+            "description": "Multiply interpolated σ after volAbs: (σ+volAbs)*(1+volRel)"
+          },
+          "smileTwist": {
+            "type": "number",
+            "default": 0,
+            "description": "Extra tilt vs k: σ_used += smileTwist * k (vol points per unit log-moneyness)"
+          }
+        }
+      },
+      "ScenarioFromSurfaceRequest": {
+        "type": "object",
+        "title": "ScenarioFromSurfaceRequest",
+        "description": "Book reval on an IV surface under sticky moneyness/strike/fixed_vol with optional F, rate, time, and vol shocks.",
+        "additionalProperties": false,
+        "required": [
+          "surfaceConvention",
+          "rate",
+          "surface",
+          "positions",
+          "scenario"
+        ],
+        "properties": {
+          "surfaceConvention": {
+            "type": "string",
+            "const": "log_moneyness_forward"
+          },
+          "interpolation": {
+            "type": "string",
+            "const": "total_variance_bilinear"
+          },
+          "wingRule": {
+            "type": "string",
+            "const": "flat_vol"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "dividendYield": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "sticky": {
+            "type": "string",
+            "enum": [
+              "moneyness",
+              "strike",
+              "fixed_vol"
+            ],
+            "default": "moneyness",
+            "description": "After F→F′: moneyness reads k′=ln(K/F′); strike reads old k=ln(K/F_base); fixed_vol keeps σ from base k (still applies volAbs/volRel/twist)"
+          },
+          "surface": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/SurfacePricingPoint"
+            }
+          },
+          "positions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/SurfacePricingLeg"
+            }
+          },
+          "scenario": {
+            "$ref": "#/components/schemas/ScenarioShockSurface"
+          }
+        }
+      },
+      "PriceFromSurfaceResponse": {
+        "type": "object",
+        "required": [
+          "results",
+          "warnings",
+          "requestId",
+          "computedAt"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "description": "Per-option price, interpolated σ, k, F, Greeks"
+          },
+          "book": {
+            "type": "object",
+            "description": "Aggregated MTM + Greeks"
+          },
+          "units": {
+            "type": "object"
+          },
+          "surfaceMeta": {
+            "type": "object"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "computedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ScenarioFromSurfaceResponse": {
+        "type": "object",
+        "required": [
+          "legs",
+          "book",
+          "warnings",
+          "requestId",
+          "computedAt"
+        ],
+        "properties": {
+          "sticky": {
+            "type": "string"
+          },
+          "scenario": {
+            "type": "object",
+            "description": "Echo of applied scenario shocks"
+          },
+          "legs": {
+            "type": "array",
+            "description": "Per-leg base vs scenario value, σ, k/F, sticky-σ Greeks"
+          },
+          "book": {
+            "type": "object",
+            "description": "valueBase, valueScenario, deltaValue, greeksBase/Scenario"
+          },
+          "surfaceMeta": {
+            "type": "object"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "wing clamp, tenor extrapolate, both-shocks-set, T clipped, etc."
+          },
+          "model": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "computedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

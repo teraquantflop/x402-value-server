@@ -31,6 +31,8 @@ const PAID_PATHS = [
   "/v1/option/price",
   "/v1/option/implied-vol",
   "/v1/volatility/surface",
+  "/v1/option/price-from-surface",
+  "/v1/option/scenario-from-surface",
   "/v1/portfolio/greeks",
   "/v1/portfolio/scenario",
 ] as const;

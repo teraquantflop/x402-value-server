@@ -7,6 +7,8 @@ import {
   volatilitySurfaceDiscovery,
   portfolioGreeksDiscovery,
   portfolioScenarioDiscovery,
+  priceFromSurfaceDiscovery,
+  scenarioFromSurfaceDiscovery,
 } from "../discovery/catalog.js";
 import {
   OPTION_EXAMPLE_INPUT,
@@ -35,6 +37,16 @@ import {
   portfolioScenarioOutputJsonSchema,
 } from "../schemas/portfolio.js";
 import { aggregatePortfolio, runPortfolioScenarios } from "../services/portfolio.js";
+import {
+  SURFACE_PRICE_EXAMPLE_INPUT,
+  SURFACE_SCENARIO_EXAMPLE_INPUT,
+  priceFromSurfaceInputJsonSchema,
+  priceFromSurfaceOutputJsonSchema,
+  scenarioFromSurfaceInputJsonSchema,
+  scenarioFromSurfaceOutputJsonSchema,
+} from "../schemas/surfacePricing.js";
+import { priceFromSurface } from "../services/priceFromSurface.js";
+import { scenarioFromSurface } from "../services/scenarioFromSurface.js";
 
 function acceptsForPrice(config: AppConfig, price: string) {
   return config.networkIds.map((network) => ({
@@ -89,15 +101,38 @@ function portfolioScenarioExampleOutput() {
  * x402 paid-route configuration with full Bazaar discovery metadata.
  * Descriptions/tags come from the discovery catalog (agent-oriented).
  */
+function priceFromSurfaceExampleOutput() {
+  return priceFromSurface(
+    SURFACE_PRICE_EXAMPLE_INPUT,
+    "00000000-0000-4000-8000-000000000006",
+    "2026-01-01T00:00:00.000Z",
+  );
+}
+
+function scenarioFromSurfaceExampleOutput() {
+  return scenarioFromSurface(
+    {
+      ...SURFACE_SCENARIO_EXAMPLE_INPUT,
+      positions: SURFACE_SCENARIO_EXAMPLE_INPUT.positions,
+    },
+    "00000000-0000-4000-8000-000000000007",
+    "2026-01-01T00:00:00.000Z",
+  );
+}
+
 export function buildPaidRoutes(config: AppConfig) {
   const optionMeta = optionPriceDiscovery(config);
   const ivMeta = impliedVolDiscovery(config);
   const surfaceMeta = volatilitySurfaceDiscovery(config);
   const portfolioMeta = portfolioGreeksDiscovery(config);
   const scenarioMeta = portfolioScenarioDiscovery(config);
+  const priceSurfMeta = priceFromSurfaceDiscovery(config);
+  const scenSurfMeta = scenarioFromSurfaceDiscovery(config);
 
   const portfolioGreeksOut = portfolioGreeksExampleOutput();
   const portfolioScenarioOut = portfolioScenarioExampleOutput();
+  const priceFromSurfOut = priceFromSurfaceExampleOutput();
+  const scenarioFromSurfOut = scenarioFromSurfaceExampleOutput();
 
   return {
     "POST /v1/option/price": {
@@ -227,6 +262,65 @@ export function buildPaidRoutes(config: AppConfig) {
           output: {
             example: portfolioScenarioOut,
             schema: portfolioScenarioOutputJsonSchema as Record<
+              string,
+              unknown
+            >,
+          },
+        }),
+      },
+    },
+
+    "POST /v1/option/price-from-surface": {
+      accepts: acceptsForPrice(
+        config,
+        config.priceOptionFromSurfaceDollarString,
+      ),
+      description: priceSurfMeta.description,
+      mimeType: priceSurfMeta.mimeType,
+      serviceName: priceSurfMeta.serviceName,
+      tags: priceSurfMeta.tags,
+      extensions: {
+        ...declareDiscoveryExtension({
+          bodyType: "json",
+          input: SURFACE_PRICE_EXAMPLE_INPUT,
+          inputSchema: {
+            properties: priceFromSurfaceInputJsonSchema.properties as Record<
+              string,
+              unknown
+            >,
+            required: [...priceFromSurfaceInputJsonSchema.required],
+          },
+          output: {
+            example: priceFromSurfOut,
+            schema: priceFromSurfaceOutputJsonSchema as Record<string, unknown>,
+          },
+        }),
+      },
+    },
+
+    "POST /v1/option/scenario-from-surface": {
+      accepts: acceptsForPrice(
+        config,
+        config.priceScenarioFromSurfaceDollarString,
+      ),
+      description: scenSurfMeta.description,
+      mimeType: scenSurfMeta.mimeType,
+      serviceName: scenSurfMeta.serviceName,
+      tags: scenSurfMeta.tags,
+      extensions: {
+        ...declareDiscoveryExtension({
+          bodyType: "json",
+          input: SURFACE_SCENARIO_EXAMPLE_INPUT,
+          inputSchema: {
+            properties: scenarioFromSurfaceInputJsonSchema.properties as Record<
+              string,
+              unknown
+            >,
+            required: [...scenarioFromSurfaceInputJsonSchema.required],
+          },
+          output: {
+            example: scenarioFromSurfOut,
+            schema: scenarioFromSurfaceOutputJsonSchema as Record<
               string,
               unknown
             >,

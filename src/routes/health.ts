@@ -18,9 +18,15 @@ import {
   PORTFOLIO_SCENARIO_EXAMPLE_INPUT,
 } from "../schemas/portfolio.js";
 import {
+  SURFACE_PRICE_EXAMPLE_INPUT,
+  SURFACE_SCENARIO_EXAMPLE_INPUT,
+} from "../schemas/surfacePricing.js";
+import {
   aggregatePortfolio,
   runPortfolioScenarios,
 } from "../services/portfolio.js";
+import { priceFromSurface } from "../services/priceFromSurface.js";
+import { scenarioFromSurface } from "../services/scenarioFromSurface.js";
 
 export const healthRouter = Router();
 
@@ -40,6 +46,8 @@ healthRouter.get("/health", (_req, res) => {
       volatilitySurface: config.priceVolSurfaceDollarString,
       portfolioGreeks: config.pricePortfolioGreeksDollarString,
       portfolioScenario: config.pricePortfolioScenarioDollarString,
+      optionFromSurface: config.priceOptionFromSurfaceDollarString,
+      scenarioFromSurface: config.priceScenarioFromSurfaceDollarString,
     },
     capabilities: SERVICE_CATALOG.capabilities,
     timestamp: new Date().toISOString(),
@@ -60,6 +68,16 @@ healthRouter.get("/", (_req, res) => {
     PORTFOLIO_SCENARIO_EXAMPLE_INPUT.dividendYield,
     PORTFOLIO_SCENARIO_EXAMPLE_INPUT.positions,
     PORTFOLIO_SCENARIO_EXAMPLE_INPUT.scenarios,
+  );
+  const priceFromSurf = priceFromSurface(
+    SURFACE_PRICE_EXAMPLE_INPUT,
+    "00000000-0000-4000-8000-000000000006",
+    "2026-01-01T00:00:00.000Z",
+  );
+  const scenarioFromSurf = scenarioFromSurface(
+    SURFACE_SCENARIO_EXAMPLE_INPUT,
+    "00000000-0000-4000-8000-000000000007",
+    "2026-01-01T00:00:00.000Z",
   );
 
   res.status(200).json({
@@ -101,6 +119,14 @@ healthRouter.get("/", (_req, res) => {
           requestId: "00000000-0000-4000-8000-000000000005",
           computedAt: "2026-01-01T00:00:00.000Z",
         },
+      },
+      optionFromSurface: {
+        request: SURFACE_PRICE_EXAMPLE_INPUT,
+        response: priceFromSurf,
+      },
+      scenarioFromSurface: {
+        request: SURFACE_SCENARIO_EXAMPLE_INPUT,
+        response: scenarioFromSurf,
       },
     },
   });

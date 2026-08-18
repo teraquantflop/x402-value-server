@@ -27,6 +27,7 @@ export const SERVICE_CATALOG = {
   description:
     "Production x402 quant API for autonomous trading and risk agents. " +
     "Price European options with full analytic Greeks; invert market premiums to implied vol (single quote or multi-maturity surface); " +
+    "price and revalue books on a submitted IV smile (total-variance bilinear in log-moneyness); " +
     "aggregate multi-leg net Greeks; reprice books under spot/vol/time scenarios. " +
     "Designed for power and energy desks (forward marks that differ by maturity), commodities, equities, and crypto — " +
     "no API keys, USDC exact settlement via HTTP 402 on Solana and/or Base. " +
@@ -36,6 +37,8 @@ export const SERVICE_CATALOG = {
     "analytic_greeks",
     "single_premium_implied_vol",
     "implied_volatility_surface",
+    "price_from_iv_surface",
+    "scenario_from_iv_surface",
     "multi_maturity_underlyings",
     "portfolio_net_greeks",
     "portfolio_scenario_analysis",
@@ -49,6 +52,8 @@ export const SERVICE_CATALOG = {
   useCases: [
     "Price power/gas/oil European options off maturity-specific forward marks",
     "Build multi-maturity IV surfaces from broker or exchange premium dumps",
+    "Price options on a submitted smile without inventing Dupire/SABR",
+    "Book reval on a smile under sticky moneyness/strike/fixed_vol shocks",
     "Delta/vega hedging loops for automated market makers",
     "Net Greeks and MTM for multi-leg books (long/short signed quantity)",
     "Scenario P&L under relative spot/vol shocks and calendar time decay",
@@ -65,6 +70,7 @@ export const SERVICE_CATALOG = {
   capabilitySummary: [
     "Single-contract Black-Scholes-Merton fair value + delta/gamma/vega/theta/rho",
     "Implied vol from one premium (fast) or a full strike×maturity surface (book)",
+    "Price / scenario on a submitted IV surface (TV bilinear in k,T; flat_vol wings)",
     "Per-row underlyings so power/commodity forwards can differ by maturity",
     "Multi-leg portfolio net Greeks, MTM, optional dollar Greeks, scenario reprice",
     "x402 USDC exact on Solana mainnet and Base mainnet; free fixed demo for discovery",
@@ -250,6 +256,67 @@ export function portfolioScenarioDiscovery(config: AppConfig) {
   };
 }
 
+export function priceFromSurfaceDiscovery(config: AppConfig) {
+  const chain = chainHint(config);
+  const description =
+    `When to use: you already have an IV surface (k,T,σ) and need to price options on it — not invert premiums and not scalar σ. ` +
+    `Interpolates total variance w=σ²T bilinear in log-moneyness k=ln(K/F); wingRule=flat_vol. ` +
+    `Returns price, interpolated σ, k, F, BS Greeks. ` +
+    `USDC exact on ${chain}. Prefer /v1/option/price when σ is a single scalar.`;
+
+  return {
+    serviceName: "Price From Surface",
+    description: description.slice(0, 500),
+    tags: clampTags([
+      "surface-price",
+      "options",
+      "smile",
+      settlementTag(config),
+      "usdc",
+    ]),
+    mimeType: "application/json" as const,
+    agentHints: {
+      whenToCall:
+        "Have a smile/surface grid and want European prices + Greeks at interpolated σ. Use scalar /v1/option/price if you already know one σ.",
+      relatedEndpoints: [
+        "POST /v1/option/price",
+        "POST /v1/volatility/surface",
+        "POST /v1/option/scenario-from-surface",
+      ],
+    },
+  };
+}
+
+export function scenarioFromSurfaceDiscovery(config: AppConfig) {
+  const chain = chainHint(config);
+  const description =
+    `When to use: book reval on an IV surface under F/rate/time/vol shocks with sticky moneyness|strike|fixed_vol. ` +
+    `Vol order: interpolate → volAbs → volRel → smileTwist*k. ` +
+    `Greeks are sticky-σ BS Greeks (not smile bump deltas). ` +
+    `USDC exact on ${chain}. Prefer scalar /v1/portfolio/scenario for per-leg scalar σ books.`;
+
+  return {
+    serviceName: "Surface Scenarios",
+    description: description.slice(0, 500),
+    tags: clampTags([
+      "scenario",
+      "surface-price",
+      "risk",
+      settlementTag(config),
+      "usdc",
+    ]),
+    mimeType: "application/json" as const,
+    agentHints: {
+      whenToCall:
+        "Need base vs scenario MTM on a smile with sticky conventions. Use price-from-surface for static pricing only.",
+      relatedEndpoints: [
+        "POST /v1/option/price-from-surface",
+        "POST /v1/portfolio/scenario",
+      ],
+    },
+  };
+}
+
 /** Service card payload for GET / (agents + humans). */
 export function buildServiceCard(config: AppConfig) {
   const optionMeta = optionPriceDiscovery(config);
@@ -257,6 +324,8 @@ export function buildServiceCard(config: AppConfig) {
   const surfaceMeta = volatilitySurfaceDiscovery(config);
   const portfolioMeta = portfolioGreeksDiscovery(config);
   const scenarioMeta = portfolioScenarioDiscovery(config);
+  const priceSurfMeta = priceFromSurfaceDiscovery(config);
+  const scenSurfMeta = scenarioFromSurfaceDiscovery(config);
 
   const base = config.publicBaseUrl.replace(/\/$/, "");
 
@@ -275,7 +344,9 @@ export function buildServiceCard(config: AppConfig) {
       scheme: "exact",
       summary:
         `option ${config.priceDollarString} · implied-vol ${config.priceImpliedVolDollarString} · ` +
-        `surface ${config.priceVolSurfaceDollarString} · portfolio-greeks ${config.pricePortfolioGreeksDollarString} · ` +
+        `surface ${config.priceVolSurfaceDollarString} · price-from-surface ${config.priceOptionFromSurfaceDollarString} · ` +
+        `scenario-from-surface ${config.priceScenarioFromSurfaceDollarString} · ` +
+        `portfolio-greeks ${config.pricePortfolioGreeksDollarString} · ` +
         `scenario ${config.pricePortfolioScenarioDollarString} · free fixed demo at /v1/demo/option-price` +
         (config.freeTierN > 0
           ? ` · first ${config.freeTierN} /v1/option/price calls per IP/window free`
@@ -304,6 +375,16 @@ export function buildServiceCard(config: AppConfig) {
         path: "POST /v1/portfolio/scenario",
         price: config.pricePortfolioScenarioDollarString,
         env: "PRICE_PORTFOLIO_SCENARIO_USD",
+      },
+      optionFromSurface: {
+        path: "POST /v1/option/price-from-surface",
+        price: config.priceOptionFromSurfaceDollarString,
+        env: "PRICE_OPTION_FROM_SURFACE_USD",
+      },
+      scenarioFromSurface: {
+        path: "POST /v1/option/scenario-from-surface",
+        price: config.priceScenarioFromSurfaceDollarString,
+        env: "PRICE_SCENARIO_FROM_SURFACE_USD",
       },
       freeDemo: {
         path: "GET|POST /v1/demo/option-price",
@@ -449,6 +530,26 @@ export function buildServiceCard(config: AppConfig) {
           mimeType: "application/json",
           tags: scenarioMeta.tags,
           agentHints: scenarioMeta.agentHints,
+        },
+        {
+          method: "POST",
+          path: "/v1/option/price-from-surface",
+          serviceName: priceSurfMeta.serviceName,
+          description: priceSurfMeta.description,
+          price: config.priceOptionFromSurfaceDollarString,
+          mimeType: "application/json",
+          tags: priceSurfMeta.tags,
+          agentHints: priceSurfMeta.agentHints,
+        },
+        {
+          method: "POST",
+          path: "/v1/option/scenario-from-surface",
+          serviceName: scenSurfMeta.serviceName,
+          description: scenSurfMeta.description,
+          price: config.priceScenarioFromSurfaceDollarString,
+          mimeType: "application/json",
+          tags: scenSurfMeta.tags,
+          agentHints: scenSurfMeta.agentHints,
         },
       ],
     },

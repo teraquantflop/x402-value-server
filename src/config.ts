@@ -94,12 +94,29 @@ const envSchema = z.object({
     .min(0.01)
     .max(1)
     .default(0.25),
+  PRICE_OPTION_FROM_SURFACE_USD: z.coerce
+    .number()
+    .min(0.01)
+    .max(1)
+    .default(0.08),
+  PRICE_SCENARIO_FROM_SURFACE_USD: z.coerce
+    .number()
+    .min(0.01)
+    .max(1)
+    .default(0.15),
   MAX_SURFACE_OPTIONS: z.coerce
     .number()
     .int()
     .min(1)
     .max(500)
     .default(200),
+  MAX_SURFACE_POINTS: z.coerce.number().int().min(1).max(500).default(200),
+  MAX_SURFACE_PRICE_OPTIONS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(50),
   MAX_PORTFOLIO_POSITIONS: z.coerce
     .number()
     .int()
@@ -292,7 +309,17 @@ function loadConfig(): AppConfig {
     pricePortfolioScenarioDollarString: formatPriceDollar(
       env.PRICE_PORTFOLIO_SCENARIO_USD,
     ),
+    priceOptionFromSurfaceUsd: env.PRICE_OPTION_FROM_SURFACE_USD,
+    priceOptionFromSurfaceDollarString: formatPriceDollar(
+      env.PRICE_OPTION_FROM_SURFACE_USD,
+    ),
+    priceScenarioFromSurfaceUsd: env.PRICE_SCENARIO_FROM_SURFACE_USD,
+    priceScenarioFromSurfaceDollarString: formatPriceDollar(
+      env.PRICE_SCENARIO_FROM_SURFACE_USD,
+    ),
     maxSurfaceOptions: env.MAX_SURFACE_OPTIONS,
+    maxSurfacePoints: env.MAX_SURFACE_POINTS,
+    maxSurfacePriceOptions: env.MAX_SURFACE_PRICE_OPTIONS,
     maxPortfolioPositions: env.MAX_PORTFOLIO_POSITIONS,
     maxScenarios: env.MAX_SCENARIOS,
     networks,
@@ -315,7 +342,7 @@ function loadConfig(): AppConfig {
     mcpEnabled: env.MCP_ENABLED !== false,
     mcpPath: env.MCP_PATH,
     serviceName: "x402-derivatives-desk",
-    serviceVersion: "1.5.0",
+    serviceVersion: "1.6.0",
   };
 }
 

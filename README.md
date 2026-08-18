@@ -1,6 +1,6 @@
 # x402 Derivatives Analytics Desk
 
-Production **HTTP 402 (x402)** quant API for **AI agents** in equities, commodities, power/energy, and crypto: European **Black-Scholes-Merton** pricing, full **Greeks**, single-premium **IV**, **IV surfaces**, **portfolio net Greeks**, and **scenario reprice**. TypeScript + Express + `@x402/*`.
+Production **HTTP 402 (x402)** quant API for **AI agents** in equities, commodities, power/energy, and crypto: European **Black-Scholes-Merton** pricing, full **Greeks**, single-premium **IV**, **IV surfaces**, **price/scenario on a submitted smile**, **portfolio net Greeks**, and **scenario reprice**. TypeScript + Express + `@x402/*`.
 
 Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** per call, and get JSON — **no API keys or accounts**.
 
@@ -9,8 +9,10 @@ Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** p
 - **POST `/v1/option/price`** — fair value + delta/gamma/vega/theta/rho (risk, hedging, trading)
 - **POST `/v1/option/implied-vol`** — solve σ̂ from one market premium + full Greeks (`fastImpliedVol`)
 - **POST `/v1/volatility/surface`** — invert market premiums → IV grid + per-quote Greeks (multi-maturity underlyings; power/commodity marks)
+- **POST `/v1/option/price-from-surface`** — price options on a submitted IV surface (TV bilinear in \(k,T\))
+- **POST `/v1/option/scenario-from-surface`** — book reval on the same surface with sticky smile shocks
 - **POST `/v1/portfolio/greeks`** — net MTM + Greeks for multi-leg books (long/short via signed quantity)
-- **POST `/v1/portfolio/scenario`** — base + shocked MTM/Greeks under spot/vol/time scenarios
+- **POST `/v1/portfolio/scenario`** — base + shocked MTM/Greeks under spot/vol/time scenarios (scalar σ per leg)
 - **GET|POST `/v1/demo/option-price`** — **free** fixed ATM sample (live engine, constant inputs) for discovery indexes
 - **POST `/mcp`** — **MCP Streamable HTTP** façade (`price_option`, `implied_vol_surface`, free `service_info`)
 - Settlement: **Solana mainnet + Base mainnet** dual USDC (exact) via PayAI; also Base Sepolia / Solana Devnet for test
@@ -35,12 +37,14 @@ Express
   paid:  POST /v1/option/price            (+ optional FREE_TIER_N)
          POST /v1/option/implied-vol
          POST /v1/volatility/surface
+         POST /v1/option/price-from-surface
+         POST /v1/option/scenario-from-surface
          POST /v1/portfolio/greeks
          POST /v1/portfolio/scenario   ← paymentMiddleware (@x402/express)
            │
            ├─ Zod validation
            ├─ Idempotency cache
-           └─ BSM / IV / portfolio services  ← also used by MCP tools
+           └─ BSM / IV / surface / portfolio services  ← also used by MCP tools
                     │
                     ▼
          HTTPFacilitatorClient → FACILITATOR_URL
@@ -68,10 +72,14 @@ Edit `.env`:
 | `FACILITATOR_URL` | Must support every network in `NETWORKS` (PayAI for mainnet dual) |
 | `PRICE_USD` | Single option `/v1/option/price` — `0.01`–`1.00` (default `0.05`) |
 | `PRICE_IMPLIED_VOL_USD` | IV solve `/v1/option/implied-vol` — default `0.03` |
-| `PRICE_VOL_SURFACE_USD` | Surface `/v1/volatility/surface` — default `0.10` |
+| `PRICE_VOL_SURFACE_USD` | Invert premiums `/v1/volatility/surface` — default `0.10` |
+| `PRICE_OPTION_FROM_SURFACE_USD` | Price on smile `/v1/option/price-from-surface` — default `0.08` |
+| `PRICE_SCENARIO_FROM_SURFACE_USD` | Surface scenario `/v1/option/scenario-from-surface` — default `0.15` |
 | `PRICE_PORTFOLIO_GREEKS_USD` | Portfolio Greeks `/v1/portfolio/greeks` — default `0.15` |
-| `PRICE_PORTFOLIO_SCENARIO_USD` | Scenarios `/v1/portfolio/scenario` — default `0.25` |
-| `MAX_SURFACE_OPTIONS` | Max options per surface request (default `200`) |
+| `PRICE_PORTFOLIO_SCENARIO_USD` | Scalar-σ scenarios `/v1/portfolio/scenario` — default `0.25` |
+| `MAX_SURFACE_OPTIONS` | Max options per invert-surface request (default `200`) |
+| `MAX_SURFACE_POINTS` | Max \((k,T,\mathrm{iv})\) points on pricing surfaces (default `200`) |
+| `MAX_SURFACE_PRICE_OPTIONS` | Max options/legs on price/scenario-from-surface (default `50`) |
 | `MAX_PORTFOLIO_POSITIONS` | Max legs per portfolio request (default `100`) |
 | `MAX_SCENARIOS` | Max scenarios per scenario request (default `20`) |
 | `FREE_DEMO_ENABLED` | Fixed free sample at `/v1/demo/option-price` (default on) |
@@ -212,6 +220,8 @@ Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.we
 | `POST /v1/option/price` | `PRICE_USD` | `$0.05` |
 | `POST /v1/option/implied-vol` | `PRICE_IMPLIED_VOL_USD` | `$0.03` |
 | `POST /v1/volatility/surface` | `PRICE_VOL_SURFACE_USD` | `$0.10` |
+| `POST /v1/option/price-from-surface` | `PRICE_OPTION_FROM_SURFACE_USD` | `$0.08` |
+| `POST /v1/option/scenario-from-surface` | `PRICE_SCENARIO_FROM_SURFACE_USD` | `$0.15` |
 | `POST /v1/portfolio/greeks` | `PRICE_PORTFOLIO_GREEKS_USD` | `$0.15` |
 | `POST /v1/portfolio/scenario` | `PRICE_PORTFOLIO_SCENARIO_USD` | `$0.25` |
 
@@ -313,6 +323,79 @@ Invert a book of market premiums into an implied-vol surface, per-option IV + Gr
 
 IV inversion uses an internal black-box solver (`fastImpliedVol`); iteration details are not exposed.
 
+### `POST /v1/option/price-from-surface` (paid · x402 exact · USDC · default `$0.08`)
+
+Price one or more European options on a **submitted** IV surface. Does **not** change scalar `/v1/option/price`.
+
+**Conventions (v1)**
+
+| Field | Value | Notes |
+|-------|--------|--------|
+| `surfaceConvention` | `log_moneyness_forward` | only supported value |
+| \(k\) | \(\ln(K/F)\) | \(F\) = that option’s `underlying` (forward or spot-as-forward) |
+| `interpolation` | `total_variance_bilinear` | interpolate \(w=\sigma^2 T\) in \((k,T)\) |
+| `wingRule` | `flat_vol` | clamp to edge vol; **no** wing model invented |
+| Caps | `MAX_SURFACE_POINTS` (200), `MAX_SURFACE_PRICE_OPTIONS` (50) | reject oversized grids/books |
+
+Surface points: unique `{k, timeToExpiry, iv}` **or** `{strike, underlying, timeToExpiry, iv}` (converted server-side). Duplicate \((k,T)\) → **400**. Soft warnings for calendar/butterfly issues; the grid is **not** repaired. No Dupire / SABR / local vol.
+
+**Request (equity-like 3×3 smile)**
+
+```json
+{
+  "surfaceConvention": "log_moneyness_forward",
+  "interpolation": "total_variance_bilinear",
+  "wingRule": "flat_vol",
+  "rate": 0.05,
+  "dividendYield": 0,
+  "surface": [
+    { "k": -0.1, "timeToExpiry": 0.25, "iv": 0.22 },
+    { "k": 0, "timeToExpiry": 0.25, "iv": 0.2 },
+    { "k": 0.1, "timeToExpiry": 0.25, "iv": 0.23 },
+    { "k": -0.1, "timeToExpiry": 0.5, "iv": 0.21 },
+    { "k": 0, "timeToExpiry": 0.5, "iv": 0.2 },
+    { "k": 0.1, "timeToExpiry": 0.5, "iv": 0.22 },
+    { "k": -0.1, "timeToExpiry": 1, "iv": 0.205 },
+    { "k": 0, "timeToExpiry": 1, "iv": 0.2 },
+    { "k": 0.1, "timeToExpiry": 1, "iv": 0.215 }
+  ],
+  "options": [
+    { "underlying": 100, "strike": 100, "timeToExpiry": 1, "optionType": "call", "quantity": 1 }
+  ]
+}
+```
+
+**Response `200` (shape)** — per option: `price`, `impliedVol` (interpolated), `k`, `forward`, BS `greeks`; plus `book`, `units`, `surfaceMeta`, `warnings`, `requestId`.
+
+ATM on a flat smile matches scalar BSM `/v1/option/price` at the same σ.
+
+### `POST /v1/option/scenario-from-surface` (paid · x402 exact · USDC · default `$0.15`)
+
+Book revaluation: **base vs scenario** on the same interpolator. Prefer this when you have a smile; keep `/v1/portfolio/scenario` for per-leg **scalar** σ books.
+
+**Sticky (after \(F \to F'\))**
+
+| `sticky` | Surface read |
+|----------|----------------|
+| `moneyness` (default) | \(k' = \ln(K/F')\) |
+| `strike` | old \(k = \ln(K/F_{\mathrm{base}})\) |
+| `fixed_vol` | σ from base \(k\) (ignore moneyness move; still apply volAbs/volRel/twist) |
+
+**Scenario object** (all optional, default `0`)
+
+| Field | Effect |
+|-------|--------|
+| `underlyingRel` XOR `underlyingAbs` | Same relative/absolute shock on every leg’s underlying (**400** if both set) |
+| `rateBp` | Rate shock in basis points |
+| `timeDays` | Roll each \(T\) by `timeDays/365`, then interpolate ( \(T\) floored at a small epsilon) |
+| `volAbs` | Add to interpolated σ |
+| `volRel` | Multiply after volAbs |
+| `smileTwist` | Extra tilt vs \(k\): \(\sigma_{\mathrm{used}} += \mathrm{smileTwist} \cdot k\) (vol points per unit log-moneyness) |
+
+**Vol transform order:** interpolate → `volAbs` → `volRel` → `smileTwist * k`.
+
+**Response `200` (shape)** — per leg and book totals: `valueBase`, `valueScenario`, `deltaValue`, σ / \(k\) / \(F\) base vs scenario, sticky-σ Greeks (**not** full smile-recalibrated bump deltas), scenario echo, warnings (wing clamp, tenor extrapolate, T clipped, …).
+
 ### `POST /v1/option/implied-vol` (paid · x402 exact · USDC · default `$0.03`)
 
 Solve implied volatility from a **single** market premium, then return full analytic Greeks at the solved σ. Reuses the same `fastImpliedVol` engine as the surface endpoint.
@@ -396,7 +479,8 @@ Works for single-option and multi-leg portfolios.
 - Single-option price/IV: sub-millisecond pure math (no I/O)
 - Portfolio Greeks: O(n) BSM evaluations over positions (default max 100)
 - Scenarios: O(n × m) reprice over positions × scenarios (defaults 100 × 20)
-- Surface: O(k) IV solves over market quotes (default max 200)
+- Invert surface: O(k) IV solves over market quotes (default max 200)
+- Price/scenario-from-surface: O(points + options) grid build + bilinear lookups (caps 200 / 50)
 
 ## Networks & facilitator
 
@@ -493,8 +577,10 @@ Metadata lives in **`src/discovery/catalog.ts`** and is applied in `src/x402/rou
 | `POST /v1/option/price` | BSM Price+Greeks | Single-contract fair value + hedge ratios |
 | `POST /v1/option/implied-vol` | Single IV Solver | One premium → σ̂ + Greeks |
 | `POST /v1/volatility/surface` | IV Surface Desk | Book → IV grid + Greeks for MM / risk |
+| `POST /v1/option/price-from-surface` | Price From Surface | Price on a submitted smile (TV bilinear) |
+| `POST /v1/option/scenario-from-surface` | Surface Scenarios | Sticky smile book reval + shocks |
 | `POST /v1/portfolio/greeks` | Portfolio Net Greeks | Multi-leg net MTM + Greeks |
-| `POST /v1/portfolio/scenario` | Portfolio Scenarios | What-if P&L under spot/vol/time |
+| `POST /v1/portfolio/scenario` | Portfolio Scenarios | What-if P&L under scalar spot/vol/time |
 
 ### Indexing notes
 

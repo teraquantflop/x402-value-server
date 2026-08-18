@@ -70,8 +70,18 @@ export interface AppConfig {
   pricePortfolioGreeksDollarString: string;
   pricePortfolioScenarioUsd: number;
   pricePortfolioScenarioDollarString: string;
-  /** Max options accepted per surface request */
+  /** Price from submitted IV surface */
+  priceOptionFromSurfaceUsd: number;
+  priceOptionFromSurfaceDollarString: string;
+  /** Scenario reval on IV surface */
+  priceScenarioFromSurfaceUsd: number;
+  priceScenarioFromSurfaceDollarString: string;
+  /** Max options accepted per invert-surface request */
   maxSurfaceOptions: number;
+  /** Max (k,T,iv) points on a submitted pricing surface */
+  maxSurfacePoints: number;
+  /** Max options/legs on price-from-surface / scenario-from-surface */
+  maxSurfacePriceOptions: number;
   maxPortfolioPositions: number;
   maxScenarios: number;
   networks: NetworkAlias[];

@@ -183,9 +183,11 @@ describe("new paid endpoints (SKIP_PAYMENT compute path)", () => {
     expect(body.prices.impliedVol).toMatch(/^\$/);
     expect(body.prices.portfolioGreeks).toMatch(/^\$/);
     expect(body.prices.portfolioScenario).toMatch(/^\$/);
+    expect(body.prices.optionFromSurface).toMatch(/^\$/);
+    expect(body.prices.scenarioFromSurface).toMatch(/^\$/);
   });
 
-  it("GET / service card includes three new paid endpoints", async () => {
+  it("GET / service card includes paid endpoints", async () => {
     const res = await fetch(`${baseUrl}/`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -196,12 +198,16 @@ describe("new paid endpoints (SKIP_PAYMENT compute path)", () => {
     expect(paths).toContain("/v1/option/implied-vol");
     expect(paths).toContain("/v1/portfolio/greeks");
     expect(paths).toContain("/v1/portfolio/scenario");
+    expect(paths).toContain("/v1/option/price-from-surface");
+    expect(paths).toContain("/v1/option/scenario-from-surface");
     expect(body.examples.impliedVol).toBeDefined();
     expect(body.examples.portfolioGreeks).toBeDefined();
     expect(body.examples.portfolioScenario).toBeDefined();
+    expect(body.examples.optionFromSurface).toBeDefined();
+    expect(body.examples.scenarioFromSurface).toBeDefined();
   });
 
-  it("well-known lists all five paid resources", async () => {
+  it("well-known lists all paid resources", async () => {
     const res = await fetch(`${baseUrl}/.well-known/x402.json`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -211,7 +217,9 @@ describe("new paid endpoints (SKIP_PAYMENT compute path)", () => {
     expect(paths).toContain("/v1/option/implied-vol");
     expect(paths).toContain("/v1/portfolio/greeks");
     expect(paths).toContain("/v1/portfolio/scenario");
-    expect(body.resources.length).toBeGreaterThanOrEqual(5);
+    expect(paths).toContain("/v1/option/price-from-surface");
+    expect(paths).toContain("/v1/option/scenario-from-surface");
+    expect(body.resources.length).toBeGreaterThanOrEqual(7);
   });
 });
 

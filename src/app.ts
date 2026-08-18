@@ -29,6 +29,7 @@ import { optionRouter } from "./routes/option.js";
 import { volatilityRouter } from "./routes/volatility.js";
 import { impliedVolRouter } from "./routes/impliedVol.js";
 import { portfolioRouter } from "./routes/portfolio.js";
+import { surfacePricingRouter } from "./routes/surfacePricing.js";
 import {
   createFacilitatorClient,
   createFacilitatorClients,
@@ -122,6 +123,7 @@ export function createApp(): Express {
   app.use(volatilityRouter);
   app.use(impliedVolRouter);
   app.use(portfolioRouter);
+  app.use(surfacePricingRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
