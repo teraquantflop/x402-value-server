@@ -1,16 +1,31 @@
-import { describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/types.js";
 import { facilitatorStatus, NETWORK_MAP } from "../src/config.js";
 import {
   CDP_FACILITATOR_URL,
+  CDP_SUPPORTED_AUTH,
+  NetworkScopedFacilitator,
   PAYAI_DEFAULT_URL,
   buildFacilitators,
+  describeCdpSecretMeta,
+  normalizeCdpApiKeySecret,
   probeFacilitatorSupport,
   resolvePayAiUrl,
   warmResourceServer,
   type BuiltFacilitators,
 } from "../src/x402/facilitator.js";
+import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import type { FacilitatorClient } from "@x402/core/server";
+
+function ed25519CdpSecret(): string {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const priv = privateKey.export({ format: "jwk" }) as { d: string };
+  const pub = publicKey.export({ format: "jwk" }) as { x: string };
+  const rawPriv = Buffer.from(priv.d, "base64url");
+  const rawPub = Buffer.from(pub.x, "base64url");
+  return Buffer.concat([rawPriv, rawPub]).toString("base64");
+}
 
 const SOLANA_PAYTO = "DCi9X5mmacNGLeJvCw9fdWgX3G8V4QquDn4EuXATkcYr";
 const BASE_PAYTO =
@@ -188,5 +203,117 @@ describe("warmResourceServer", () => {
       initialize: async () => undefined,
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("normalizeCdpApiKeySecret", () => {
+  it("unescapes literal \\n in PEM secrets (Railway/dotenv)", () => {
+    const escaped =
+      "-----BEGIN EC PRIVATE KEY-----\\nMHsCAQEE\\n-----END EC PRIVATE KEY-----\\n";
+    const normalized = normalizeCdpApiKeySecret(escaped);
+    expect(normalized).toContain("\n");
+    expect(normalized).not.toContain("\\n");
+    expect(normalized.startsWith("-----BEGIN")).toBe(true);
+    expect(describeCdpSecretMeta(normalized).startsWithBegin).toBe(true);
+  });
+
+  it("leaves Ed25519 base64 secrets unchanged", () => {
+    const ed = ed25519CdpSecret();
+    expect(normalizeCdpApiKeySecret(ed)).toBe(ed.trim());
+  });
+});
+
+describe("CDP getSupported JWT path (mocked fetch)", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("createCdpFacilitatorClient GETs /platform/v2/x402/supported with Bearer auth (200)", async () => {
+    const calls: { url: string; method?: string; hasAuth: boolean }[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      const auth = headers.Authorization ?? headers.authorization;
+      calls.push({
+        url,
+        method: init?.method,
+        hasAuth: Boolean(auth),
+      });
+      expect(typeof auth === "string" && auth.startsWith("Bearer ")).toBe(true);
+      // Never assert token contents — only presence
+      return new Response(
+        JSON.stringify({
+          kinds: [
+            { network: "eip155:8453", scheme: "exact", x402Version: 2 },
+          ],
+          extensions: [],
+          signers: {},
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const client = createCdpFacilitatorClient({
+      apiKeyId: "organizations/test/apiKeys/test",
+      apiKeySecret: ed25519CdpSecret(),
+      baseUrl: CDP_FACILITATOR_URL,
+    });
+    const supported = await client.getSupported();
+    expect(supported.kinds.length).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(
+      `https://${CDP_SUPPORTED_AUTH.host}${CDP_SUPPORTED_AUTH.path}`,
+    );
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.hasAuth).toBe(true);
+  });
+
+  it("CDP 401 is soft-skipped by NetworkScoped + probe (PayAI still ok)", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response("unauthorized", { status: 401 });
+    }) as typeof fetch;
+
+    const inner = createCdpFacilitatorClient({
+      apiKeyId: "organizations/test/apiKeys/test",
+      apiKeySecret: ed25519CdpSecret(),
+      baseUrl: CDP_FACILITATOR_URL,
+    });
+    const cdp = new NetworkScopedFacilitator(
+      inner,
+      new Set(["eip155:8453"]),
+      "cdp",
+    );
+
+    // Scoped wrapper must not throw on 401
+    const empty = await cdp.getSupported();
+    expect(empty.kinds).toEqual([]);
+
+    const payai: FacilitatorClient = {
+      verify: vi.fn(),
+      settle: vi.fn(),
+      getSupported: vi.fn().mockResolvedValue({
+        kinds: [
+          {
+            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            scheme: "exact",
+            x402Version: 2,
+          },
+        ],
+        extensions: [],
+        signers: {},
+      }),
+    };
+
+    const probe = await probeFacilitatorSupport({
+      clients: [cdp, payai],
+      payai,
+      cdp,
+      payaiUrl: PAYAI_DEFAULT_URL,
+    });
+    expect(probe.payaiOk).toBe(true);
+    expect(probe.cdpOk).toBe(false);
+    expect(probe.errors.length).toBeGreaterThan(0);
   });
 });

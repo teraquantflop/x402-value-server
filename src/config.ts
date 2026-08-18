@@ -6,6 +6,7 @@ import type {
   NetworkAlias,
   NetworkId,
 } from "./types.js";
+import { normalizeCdpApiKeySecret } from "./x402/cdpCredentials.js";
 
 export const NETWORK_MAP: Record<NetworkAlias, NetworkId> = {
   "base-sepolia": "eip155:84532",
@@ -281,7 +282,8 @@ function loadConfig(): AppConfig {
   }
 
   const cdpId = (env.CDP_API_KEY_ID ?? "").trim();
-  const cdpSecret = (env.CDP_API_KEY_SECRET ?? "").trim();
+  // Unescape PEM `\n` from Railway/dotenv before JWT minting (EC keys).
+  const cdpSecret = normalizeCdpApiKeySecret(env.CDP_API_KEY_SECRET ?? "");
   if (Boolean(cdpId) !== Boolean(cdpSecret)) {
     console.warn(
       "[warn] CDP_API_KEY_ID and CDP_API_KEY_SECRET must both be set; ignoring CDP",

@@ -2,22 +2,34 @@
  * Facilitator clients: PayAI always; Coinbase CDP for Base when configured.
  * Two rails — never one URL:
  *   - PayAI  → FACILITATOR_URL (default https://facilitator.payai.network), no CDP JWT
- *   - CDP    → createCdpFacilitatorClient({ apiKeyId, apiKeySecret }) only
+ *   - CDP    → createCdpFacilitatorClient from @coinbase/cdp-sdk/x402 (JWT for GET …/supported)
  * Earlier clients in the array win network kinds in x402ResourceServer.initialize().
  */
-import { createRequire } from "node:module";
+import {
+  createCdpFacilitatorClient,
+  CDP_FACILITATOR_URL as SDK_CDP_FACILITATOR_URL,
+} from "@coinbase/cdp-sdk/x402";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import type { FacilitatorClient } from "@x402/core/server";
 import type { AppConfig } from "../types.js";
+import {
+  CDP_SUPPORTED_AUTH,
+  describeCdpSecretMeta,
+  normalizeCdpApiKeySecret,
+} from "./cdpCredentials.js";
 
 export const PAYAI_DEFAULT_URL = "https://facilitator.payai.network";
 export const CDP_FACILITATOR_URL =
-  "https://api.cdp.coinbase.com/platform/v2/x402";
+  SDK_CDP_FACILITATOR_URL || "https://api.cdp.coinbase.com/platform/v2/x402";
 
 /** Base mainnet only — CDP must not steal Solana kinds from PayAI. */
 export const CDP_BASE_NETWORKS = Object.freeze(["eip155:8453"] as const);
 
-const require = createRequire(import.meta.url);
+export {
+  CDP_SUPPORTED_AUTH,
+  describeCdpSecretMeta,
+  normalizeCdpApiKeySecret,
+} from "./cdpCredentials.js";
 
 export type FacilitatorProbeResult = {
   payaiOk: boolean;
@@ -66,7 +78,7 @@ export function resolvePayAiUrl(facilitatorUrl: string | undefined): string {
  * Advertise only selected networks so initialize() maps Base → CDP.
  * Soft-fails getSupported (returns empty kinds) so one rail never kills boot.
  */
-class NetworkScopedFacilitator implements FacilitatorClient {
+export class NetworkScopedFacilitator implements FacilitatorClient {
   readonly name: string;
 
   constructor(
@@ -99,9 +111,10 @@ class NetworkScopedFacilitator implements FacilitatorClient {
       );
       return { ...supported, kinds };
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.warn(
         `[facilitator] ${this.name} getSupported failed; skipping it:`,
-        err instanceof Error ? err.message : err,
+        msg,
       );
       return { kinds: [], extensions: [], signers: {} };
     }
@@ -127,22 +140,34 @@ function createPayAiClient(config: AppConfig): HTTPFacilitatorClient {
 
 /**
  * CDP client when both API keys are present. Soft-fails to null if construction fails.
- * Uses only apiKeyId + apiKeySecret. CDP_WALLET_SECRET is unused when payTo is an EOA.
+ *
+ * Mirrors pjm-nowcast: createCdpFacilitatorClient / create_facilitator_config with
+ * apiKeyId + apiKeySecret only. CDP_WALLET_SECRET unused when payTo is an EOA.
+ * SDK mints JWT for GET /platform/v2/x402/supported (not the verify POST path).
  */
 function createCdpClient(config: AppConfig): FacilitatorClient | null {
   if (!config.cdpConfigured || !config.cdpApiKeyId || !config.cdpApiKeySecret) {
     return null;
   }
+
+  const apiKeyId = config.cdpApiKeyId.trim();
+  const apiKeySecret = normalizeCdpApiKeySecret(config.cdpApiKeySecret);
+  const secretMeta = describeCdpSecretMeta(apiKeySecret);
+
+  console.log(
+    `[facilitator] CDP client via createCdpFacilitatorClient` +
+      ` secretLen=${secretMeta.length}` +
+      ` secretStartsWithBegin=${secretMeta.startsWithBegin}` +
+      ` jwt=${CDP_SUPPORTED_AUTH.method} ${CDP_SUPPORTED_AUTH.host}${CDP_SUPPORTED_AUTH.path}`,
+  );
+
   try {
-    const mod = require("@coinbase/cdp-sdk/x402") as {
-      createCdpFacilitatorClient: (args?: {
-        apiKeyId?: string;
-        apiKeySecret?: string;
-      }) => HTTPFacilitatorClient;
-    };
-    const inner = mod.createCdpFacilitatorClient({
-      apiKeyId: config.cdpApiKeyId,
-      apiKeySecret: config.cdpApiKeySecret,
+    // Same helper as @coinbase/cdp-sdk/x402 docs / nowcast TS equivalent.
+    // createAuthHeaders mints supported JWT with requestMethod GET.
+    const inner = createCdpFacilitatorClient({
+      apiKeyId,
+      apiKeySecret,
+      baseUrl: CDP_FACILITATOR_URL,
     });
     const scoped = new NetworkScopedFacilitator(
       inner,
@@ -153,7 +178,7 @@ function createCdpClient(config: AppConfig): FacilitatorClient | null {
     return scoped;
   } catch (err) {
     console.warn(
-      "[facilitator] CDP keys set but client unavailable; PayAI-only:",
+      "[facilitator] CDP keys set but createCdpFacilitatorClient failed; PayAI-only:",
       err instanceof Error ? err.message : err,
     );
     return null;
@@ -214,14 +239,21 @@ export async function probeFacilitatorSupport(
   }
 
   if (built.cdp) {
+    console.log(
+      `[facilitator] CDP probe → ${CDP_SUPPORTED_AUTH.method} https://${CDP_SUPPORTED_AUTH.host}${CDP_SUPPORTED_AUTH.path}`,
+    );
     try {
       const supported = await built.cdp.getSupported();
       const n = supported.kinds?.length ?? 0;
       cdpOk = n > 0;
       if (!cdpOk) {
-        errors.push("CDP getSupported returned no kinds (auth failure or empty)");
+        // NetworkScoped swallows 401 into empty kinds — surface that clearly.
+        errors.push(
+          "CDP getSupported returned no kinds (likely 401/auth failure or empty catalog)",
+        );
         console.warn(
-          "[facilitator] CDP probe: no kinds — continuing with Solana/PayAI",
+          "[facilitator] CDP probe: no kinds — continuing with Solana/PayAI" +
+            ` (jwt was for ${CDP_SUPPORTED_AUTH.method} ${CDP_SUPPORTED_AUTH.path})`,
         );
       } else {
         console.log(`[facilitator] CDP probe ok kinds=${n} (Base eip155:8453)`);
