@@ -33,7 +33,8 @@ function printBanner(): void {
   );
   console.log(
     `  facilitators: payai=${fac.payai ? "yes" : "no"}` +
-      ` cdp=${fac.cdp ? "yes" : "no"}` +
+      ` cdp.enabled=${fac.cdp.enabled ? "yes" : "no"}` +
+      ` cdp.lastProbe=${fac.cdp.lastProbe}` +
       ` base=${fac.base} solana=${fac.solana}`,
   );
   console.log(`  free routes:  GET /`);
@@ -130,13 +131,14 @@ async function warmFacilitatorsAtBoot(app: ReturnType<typeof createApp>): Promis
         "[facilitator] PayAI probe did not succeed — Solana settles may fail until facilitator recovers",
       );
     }
-    if (probe.cdpOk === false) {
+    if (probe.cdpEnabled && probe.cdpLastProbe === "401") {
       console.warn(
-        "[facilitator] CDP unavailable — Base settles via CDP will fail; Solana/PayAI still active",
+        "[facilitator] CDP getSupported 401 (warn-only) — Base remains enabled for verify/settle",
       );
     }
   }
 
+  // Scoped CDP synthesizes Base kinds on 401 so initialize keeps eip155:8453 mapped.
   await warmResourceServer(locals.x402ResourceServer);
 }
 

@@ -7,6 +7,7 @@ import type {
   NetworkId,
 } from "./types.js";
 import { normalizeCdpApiKeySecret } from "./x402/cdpCredentials.js";
+import { getCdpLastProbe } from "./x402/cdpProbeState.js";
 
 export const NETWORK_MAP: Record<NetworkAlias, NetworkId> = {
   "base-sepolia": "eip155:84532",
@@ -356,11 +357,15 @@ export function facilitatorStatus(
   const hasSolana =
     config.networks.includes("solana") ||
     config.networks.includes("solana-devnet");
-  const cdp = config.cdpConfigured;
+  const enabled = config.cdpConfigured;
   return {
     payai: true,
-    cdp,
-    base: hasBase ? (cdp ? "cdp" : "payai") : "none",
+    cdp: {
+      enabled,
+      // Keys present ⇒ enabled stays true even if lastProbe is 401
+      lastProbe: enabled ? getCdpLastProbe() : "skipped",
+    },
+    base: hasBase ? (enabled ? "cdp" : "payai") : "none",
     solana: hasSolana ? "payai" : "none",
   };
 }

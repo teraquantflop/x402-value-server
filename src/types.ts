@@ -119,7 +119,14 @@ export interface AppConfig {
 /** Public facilitator labels — never includes secrets or wallet addresses. */
 export interface FacilitatorStatus {
   payai: boolean;
-  cdp: boolean;
+  /**
+   * CDP rail status. `enabled` = keys present (never flipped false on getSupported 401).
+   * `lastProbe` = warn-only GET /supported outcome.
+   */
+  cdp: {
+    enabled: boolean;
+    lastProbe: "200" | "401" | "skipped";
+  };
   /** Which facilitator handles Base mainnet accepts */
   base: "cdp" | "payai" | "none";
   /** Which facilitator handles Solana mainnet accepts */

@@ -548,9 +548,9 @@ CDP_API_KEY_SECRET=...
 # CDP_WALLET_SECRET=   # optional; unused when payTo is an EOA
 ```
 
-Boot probes PayAI `getSupported` (no auth) and CDP `getSupported` (CDP client only). CDP 401 or missing keys are logged; the process **still listens** on Solana/PayAI.
+Boot probes PayAI `getSupported` (no auth). CDP `getSupported` is **warn-only**: a 401 never drops Base — keys present ⇒ `eip155:8453` stays in 402 accepts and verify/settle use CDP (nowcast semantics).
 
-`GET /health` reports `facilitators: { payai, cdp, base, solana }` (names only, never secrets).
+`GET /health` reports `facilitators: { payai, cdp: { enabled, lastProbe }, base, solana }` (names only, never secrets). `cdp.enabled` stays true when keys are set even if `lastProbe` is `401`.
 
 ## Bazaar discovery checklist
 

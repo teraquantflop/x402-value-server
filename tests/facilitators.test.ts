@@ -12,9 +12,11 @@ import {
   normalizeCdpApiKeySecret,
   probeFacilitatorSupport,
   resolvePayAiUrl,
+  syntheticCdpBaseSupported,
   warmResourceServer,
   type BuiltFacilitators,
 } from "../src/x402/facilitator.js";
+import { resetCdpLastProbe, setCdpLastProbe } from "../src/x402/cdpProbeState.js";
 import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import type { FacilitatorClient } from "@x402/core/server";
 
@@ -96,16 +98,18 @@ describe("resolvePayAiUrl", () => {
 
 describe("facilitatorStatus", () => {
   it("reports nowcast-shaped labels without CDP", () => {
+    resetCdpLastProbe();
     const status = facilitatorStatus(baseConfig({ cdpConfigured: false }));
     expect(status).toEqual({
       payai: true,
-      cdp: false,
+      cdp: { enabled: false, lastProbe: "skipped" },
       base: "payai",
       solana: "payai",
     });
   });
 
-  it("reports base=cdp when CDP configured", () => {
+  it("keeps cdp.enabled true when lastProbe is 401", () => {
+    setCdpLastProbe("401");
     const status = facilitatorStatus(
       baseConfig({
         cdpConfigured: true,
@@ -113,12 +117,10 @@ describe("facilitatorStatus", () => {
         cdpApiKeySecret: "secret",
       }),
     );
-    expect(status).toEqual({
-      payai: true,
-      cdp: true,
-      base: "cdp",
-      solana: "payai",
-    });
+    expect(status.cdp.enabled).toBe(true);
+    expect(status.cdp.lastProbe).toBe("401");
+    expect(status.base).toBe("cdp");
+    expect(status.solana).toBe("payai");
   });
 });
 
@@ -126,6 +128,8 @@ describe("buildFacilitators", () => {
   it("builds PayAI-only when CDP unset", () => {
     const built = buildFacilitators(baseConfig({ cdpConfigured: false }));
     expect(built.cdp).toBeNull();
+    expect(built.cdpInner).toBeNull();
+    expect(built.cdpEnabled).toBe(false);
     expect(built.clients).toHaveLength(1);
     expect(built.payaiUrl).toBe(PAYAI_DEFAULT_URL);
   });
@@ -142,48 +146,85 @@ describe("buildFacilitators", () => {
 });
 
 describe("probeFacilitatorSupport", () => {
-  it("never throws when CDP getSupported rejects", async () => {
+  it("keeps cdpEnabled on 401 (warn-only)", async () => {
     const payai: FacilitatorClient = {
       verify: vi.fn(),
       settle: vi.fn(),
       getSupported: vi.fn().mockResolvedValue({
-        kinds: [{ network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", scheme: "exact", x402Version: 2 }],
+        kinds: [
+          {
+            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            scheme: "exact",
+            x402Version: 2,
+          },
+        ],
       }),
     };
-    const cdp: FacilitatorClient = {
+    const cdpInner: FacilitatorClient = {
       verify: vi.fn(),
       settle: vi.fn(),
       getSupported: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
     };
+    const cdp = new NetworkScopedFacilitator(
+      cdpInner,
+      new Set(["eip155:8453"]),
+      "cdp",
+      "cdp-synthesize-base",
+    );
     const built: BuiltFacilitators = {
       clients: [cdp, payai],
       payai,
       cdp,
+      cdpInner,
       payaiUrl: PAYAI_DEFAULT_URL,
+      cdpEnabled: true,
     };
 
     const result = await probeFacilitatorSupport(built);
     expect(result.payaiOk).toBe(true);
-    expect(result.cdpOk).toBe(false);
+    expect(result.cdpEnabled).toBe(true);
+    expect(result.cdpLastProbe).toBe("401");
     expect(result.errors.some((e) => /401|CDP/i.test(e))).toBe(true);
+
+    // Scoped client still returns Base kinds for initialize()
+    const supported = await cdp.getSupported();
+    expect(supported.kinds.some((k) => k.network === "eip155:8453")).toBe(true);
   });
 
-  it("sets cdpOk null when CDP not built", async () => {
+  it("sets lastProbe skipped when CDP not built", async () => {
     const payai: FacilitatorClient = {
       verify: vi.fn(),
       settle: vi.fn(),
       getSupported: vi.fn().mockResolvedValue({
-        kinds: [{ network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", scheme: "exact", x402Version: 2 }],
+        kinds: [
+          {
+            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            scheme: "exact",
+            x402Version: 2,
+          },
+        ],
       }),
     };
     const result = await probeFacilitatorSupport({
       clients: [payai],
       payai,
       cdp: null,
+      cdpInner: null,
       payaiUrl: PAYAI_DEFAULT_URL,
+      cdpEnabled: false,
     });
-    expect(result.cdpOk).toBeNull();
+    expect(result.cdpEnabled).toBe(false);
+    expect(result.cdpLastProbe).toBe("skipped");
     expect(result.payaiOk).toBe(true);
+  });
+});
+
+describe("syntheticCdpBaseSupported", () => {
+  it("advertises exact on eip155:8453 for initialize mapping", () => {
+    const s = syntheticCdpBaseSupported();
+    expect(s.kinds).toEqual([
+      { x402Version: 2, scheme: "exact", network: "eip155:8453" },
+    ]);
   });
 });
 
@@ -270,7 +311,7 @@ describe("CDP getSupported JWT path (mocked fetch)", () => {
     expect(calls[0]!.hasAuth).toBe(true);
   });
 
-  it("CDP 401 is soft-skipped by NetworkScoped + probe (PayAI still ok)", async () => {
+  it("CDP 401 keeps Base registered via synthesis (PayAI still ok)", async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response("unauthorized", { status: 401 });
     }) as typeof fetch;
@@ -284,11 +325,12 @@ describe("CDP getSupported JWT path (mocked fetch)", () => {
       inner,
       new Set(["eip155:8453"]),
       "cdp",
+      "cdp-synthesize-base",
     );
 
-    // Scoped wrapper must not throw on 401
-    const empty = await cdp.getSupported();
-    expect(empty.kinds).toEqual([]);
+    // Scoped wrapper synthesizes Base kinds — never drops Base on 401
+    const supported = await cdp.getSupported();
+    expect(supported.kinds.some((k) => k.network === "eip155:8453")).toBe(true);
 
     const payai: FacilitatorClient = {
       verify: vi.fn(),
@@ -310,10 +352,13 @@ describe("CDP getSupported JWT path (mocked fetch)", () => {
       clients: [cdp, payai],
       payai,
       cdp,
+      cdpInner: inner,
       payaiUrl: PAYAI_DEFAULT_URL,
+      cdpEnabled: true,
     });
     expect(probe.payaiOk).toBe(true);
-    expect(probe.cdpOk).toBe(false);
+    expect(probe.cdpEnabled).toBe(true);
+    expect(probe.cdpLastProbe).toBe("401");
     expect(probe.errors.length).toBeGreaterThan(0);
   });
 });
