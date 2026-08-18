@@ -78,6 +78,8 @@ export function buildLlmsTxt(config: AppConfig): string {
     `- [Service card (JSON)](${abs(base, "/")})`,
     `- [Health](${abs(base, "/health")})`,
     `- [OpenAPI](${abs(base, "/openapi.json")})`,
+    `- [Swagger alias](${abs(base, "/swagger.json")}) — same as OpenAPI`,
+    `- [Skill](${abs(base, "/skill.md")}) · [SKILL.md](${abs(base, "/SKILL.md")})`,
     `- [x402 well-known](${abs(base, "/.well-known/x402.json")})`,
     `- [llms.txt](${abs(base, "/llms.txt")}) — this file`,
   );

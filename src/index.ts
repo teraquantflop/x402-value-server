@@ -40,7 +40,10 @@ function printBanner(): void {
   console.log(`  free routes:  GET /`);
   console.log(`                GET /health`);
   console.log(`                GET /openapi.json`);
+  console.log(`                GET /swagger.json`);
   console.log(`                GET /llms.txt`);
+  console.log(`                GET /skill.md`);
+  console.log(`                GET /SKILL.md`);
   console.log(`                GET /favicon.ico`);
   console.log(`                GET /.well-known/x402`);
   console.log(`                GET /.well-known/x402.json`);

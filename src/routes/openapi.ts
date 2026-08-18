@@ -44,6 +44,8 @@ function sendOpenApi(_req: Request, res: Response): void {
 }
 
 openapiRouter.get("/openapi.json", sendOpenApi);
+/** Alias — same OpenAPI document (source of truth remains openapi.json). */
+openapiRouter.get("/swagger.json", sendOpenApi);
 
 /** Shared handler for explicit app.get registration. */
 export { sendOpenApi, openApiDocument };

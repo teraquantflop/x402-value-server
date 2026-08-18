@@ -23,6 +23,7 @@ import { healthRouter } from "./routes/health.js";
 import { wellKnownRouter } from "./routes/wellKnown.js";
 import { openapiRouter, sendOpenApi } from "./routes/openapi.js";
 import { llmsTxtRouter, sendLlmsTxt } from "./routes/llmsTxt.js";
+import { skillMdRouter, sendSkillMd } from "./routes/skillMd.js";
 import { demoRouter } from "./routes/demo.js";
 import { staticAssetsRouter } from "./routes/staticAssets.js";
 import { optionRouter } from "./routes/option.js";
@@ -61,11 +62,15 @@ function mountFreeDiscoveryRoutes(app: Express): void {
   app.get("/.well-known/x402", sendWellKnown);
   app.get("/.well-known/x402.json", sendWellKnown);
   app.get("/openapi.json", sendOpenApi);
+  app.get("/swagger.json", sendOpenApi);
   app.get("/llms.txt", sendLlmsTxt);
+  app.get("/skill.md", sendSkillMd);
+  app.get("/SKILL.md", sendSkillMd);
 
   app.use(wellKnownRouter);
   app.use(openapiRouter);
   app.use(llmsTxtRouter);
+  app.use(skillMdRouter);
   app.use(healthRouter);
   app.use(staticAssetsRouter);
 

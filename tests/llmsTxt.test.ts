@@ -17,6 +17,8 @@ describe("buildLlmsTxt", () => {
     expect(text).toContain("/v1/portfolio/scenario");
     expect(text).toContain(config.priceDollarString);
     expect(text).toContain("openapi.json");
+    expect(text).toContain("swagger.json");
+    expect(text).toContain("/skill.md");
     expect(text).toMatch(/well-known\/x402/);
     expect(text).toMatch(/USDC|Solana|x402/i);
     expect(text).toContain("/llms.txt");

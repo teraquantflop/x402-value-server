@@ -117,7 +117,9 @@ export async function createDerivativesMcpServer(
         links: {
           serviceCard: `${base}/`,
           openapi: `${base}/openapi.json`,
+          swagger: `${base}/swagger.json`,
           llmsTxt: `${base}/llms.txt`,
+          skillMd: `${base}/skill.md`,
           wellKnown: `${base}/.well-known/x402.json`,
           freeDemo: config.freeDemoEnabled
             ? `${base}/v1/demo/option-price`

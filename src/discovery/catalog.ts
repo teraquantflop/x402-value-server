@@ -475,9 +475,25 @@ export function buildServiceCard(config: AppConfig) {
         },
         {
           method: "GET",
+          path: "/swagger.json",
+          description: "Alias of /openapi.json (same OpenAPI document)",
+        },
+        {
+          method: "GET",
           path: "/llms.txt",
           description:
             "Agent-oriented Markdown summary (llms.txt convention): capabilities, paid endpoints, discovery links",
+        },
+        {
+          method: "GET",
+          path: "/skill.md",
+          description:
+            "Short agent skill loader (Markdown): what, pay, free/paid routes, surface value-add, examples",
+        },
+        {
+          method: "GET",
+          path: "/SKILL.md",
+          description: "Alias of /skill.md",
         },
       ],
       paid: [
@@ -622,7 +638,9 @@ export function buildWellKnownX402(config: AppConfig) {
       health: `${base}/health`,
       wellKnown: `${base}/.well-known/x402.json`,
       openapi: `${base}/openapi.json`,
+      swagger: `${base}/swagger.json`,
       llmsTxt: `${base}/llms.txt`,
+      skillMd: `${base}/skill.md`,
       favicon: `${base}/favicon.ico`,
       freeDemo: config.freeDemoEnabled
         ? `${base}/v1/demo/option-price`
