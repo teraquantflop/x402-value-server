@@ -1,7 +1,12 @@
-import { config } from "./config.js";
-import { createApp } from "./app.js";
+import { config, facilitatorStatus } from "./config.js";
+import { createApp, type AppLocals } from "./app.js";
+import {
+  probeFacilitatorSupport,
+  warmResourceServer,
+} from "./x402/facilitator.js";
 
 function printBanner(): void {
+  const fac = facilitatorStatus(config);
   console.log(
     `[${config.serviceName}] v${config.serviceVersion} listening on :${config.port}`,
   );
@@ -17,7 +22,7 @@ function printBanner(): void {
     console.log(`  payTo (EVM):  ${config.payToEvm}`);
   }
   console.log(`  price:        ${config.priceDollarString}`);
-  console.log(`  facilitator:  ${config.facilitatorUrl}`);
+  console.log(`  facilitator:  ${config.facilitatorUrl} (PayAI URL)`);
   console.log(`  public URL:   ${config.publicBaseUrl}`);
   console.log(
     `  prices:       option=${config.priceDollarString}` +
@@ -27,7 +32,9 @@ function printBanner(): void {
       ` portfolioScenario=${config.pricePortfolioScenarioDollarString}`,
   );
   console.log(
-    `  facilitators: payai=yes cdp=${config.cdpConfigured ? "yes" : "no"}`,
+    `  facilitators: payai=${fac.payai ? "yes" : "no"}` +
+      ` cdp=${fac.cdp ? "yes" : "no"}` +
+      ` base=${fac.base} solana=${fac.solana}`,
   );
   console.log(`  free routes:  GET /`);
   console.log(`                GET /health`);
@@ -77,22 +84,26 @@ function explainStartupError(err: unknown): void {
   console.error(message);
   if (
     message.includes("Facilitator does not support") ||
-    message.includes("Route Configuration")
+    message.includes("Route Configuration") ||
+    message.includes("no supported payment kinds")
   ) {
     console.error(`
-Hint — pick a facilitator that supports your NETWORKS:
+Hint — use TWO facilitators (not one URL):
 
-  Base Sepolia / Solana Devnet (public, no auth):
+  Dual mainnet (recommended):
+    NETWORKS=solana,base
+    FACILITATOR_URL=https://facilitator.payai.network
+    PAY_TO_ADDRESS=<Solana base58>
+    PAY_TO_EVM_ADDRESS=0x…
+    CDP_API_KEY_ID / CDP_API_KEY_SECRET     # Base via CDP only
+    # CDP_WALLET_SECRET=                   # optional; unused when payTo is an EOA
+
+  Do NOT set FACILITATOR_URL to api.cdp.coinbase.com
+  Do NOT send CDP JWTs to PayAI
+
+  Testnet only (public facilitator, no auth):
     NETWORKS=base-sepolia          FACILITATOR_URL=https://x402.org/facilitator
     NETWORKS=solana-devnet         FACILITATOR_URL=https://x402.org/facilitator
-
-  Solana mainnet / Base mainnet (no CDP keys needed):
-    NETWORKS=solana                FACILITATOR_URL=https://facilitator.payai.network
-    NETWORKS=base                  FACILITATOR_URL=https://facilitator.payai.network
-
-  CDP (requires API keys):
-    FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402
-    CDP_API_KEY_ID / CDP_API_KEY_SECRET
 
   CAIP-2 IDs:
     solana mainnet → solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp
@@ -101,6 +112,32 @@ Hint — pick a facilitator that supports your NETWORKS:
     base sepolia   → eip155:84532
 `);
   }
+}
+
+/**
+ * Boot probes + warm initialize. Never throws — CDP 401 / missing keys
+ * must not prevent Solana/PayAI from listening.
+ */
+async function warmFacilitatorsAtBoot(app: ReturnType<typeof createApp>): Promise<void> {
+  if (config.skipPayment) return;
+
+  const locals = app.locals as AppLocals;
+  const built = locals.facilitators;
+  if (built) {
+    const probe = await probeFacilitatorSupport(built);
+    if (!probe.payaiOk) {
+      console.warn(
+        "[facilitator] PayAI probe did not succeed — Solana settles may fail until facilitator recovers",
+      );
+    }
+    if (probe.cdpOk === false) {
+      console.warn(
+        "[facilitator] CDP unavailable — Base settles via CDP will fail; Solana/PayAI still active",
+      );
+    }
+  }
+
+  await warmResourceServer(locals.x402ResourceServer);
 }
 
 const app = createApp();
@@ -122,6 +159,13 @@ if (
 // Bind all interfaces (required in Docker / Railway; PORT comes from the platform)
 const server = app.listen(config.port, "0.0.0.0", () => {
   printBanner();
+  void warmFacilitatorsAtBoot(app).catch((err) => {
+    // Belt-and-suspenders: probe/warm must never crash listen
+    console.warn(
+      "[facilitator] boot warm unexpected error (ignored):",
+      err instanceof Error ? err.message : err,
+    );
+  });
 });
 
 server.on("error", (err) => {
@@ -130,8 +174,21 @@ server.on("error", (err) => {
 });
 
 // paymentMiddleware validates facilitator/network support asynchronously after
-// the first matching request (or on init). Surface unhandled rejections clearly.
+// the first matching request (or on init). Surface unhandled rejections clearly,
+// but do not exit on a single-rail getSupported failure (CDP 401 while PayAI works).
 process.on("unhandledRejection", (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const soft =
+    /getSupported|Failed to fetch supported kinds|401|unauthorized/i.test(
+      message,
+    );
+  if (soft) {
+    console.warn(
+      "[facilitator] unhandledRejection from facilitator probe (ignored; process stays up):",
+      message,
+    );
+    return;
+  }
   explainStartupError(reason);
   process.exit(1);
 });

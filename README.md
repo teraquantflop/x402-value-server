@@ -15,7 +15,7 @@ Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** p
 - **POST `/v1/portfolio/scenario`** — base + shocked MTM/Greeks under spot/vol/time scenarios (scalar σ per leg)
 - **GET|POST `/v1/demo/option-price`** — **free** fixed ATM sample (live engine, constant inputs) for discovery indexes
 - **POST `/mcp`** — **MCP Streamable HTTP** façade (`price_option`, `implied_vol_surface`, free `service_info`)
-- Settlement: **Solana mainnet + Base mainnet** dual USDC (exact) via PayAI; also Base Sepolia / Solana Devnet for test
+- Settlement: **Solana mainnet (PayAI) + Base mainnet (CDP when keys set)** dual USDC (exact); also Base Sepolia / Solana Devnet for test
 - 402 challenges list **one accept per network** — clients pay on Solana **or** Base
 - Configurable micropayments **$0.01–$1.00** per endpoint
 - **Rich Bazaar discovery** (descriptions, tags, input/output schemas, examples, agent when-to-use copy)
@@ -47,7 +47,8 @@ Express
            └─ BSM / IV / surface / portfolio services  ← also used by MCP tools
                     │
                     ▼
-         HTTPFacilitatorClient → FACILITATOR_URL
+         PayAI HTTPFacilitatorClient → FACILITATOR_URL
+         CDP createCdpFacilitatorClient → api.cdp.coinbase.com (Base only)
 ```
 
 ## Quick start (Base Sepolia)
@@ -69,7 +70,9 @@ Edit `.env`:
 | `PAY_TO_EVM_ADDRESS` | Base/EVM receiver when dual-chain (e.g. `0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f`) |
 | `PAY_TO_SVM_ADDRESS` | Explicit Solana receiver when dual-chain |
 | `NETWORKS` | Comma-separated: `solana,base` (prod dual) \| `base-sepolia` \| `solana-devnet` \| … |
-| `FACILITATOR_URL` | Must support every network in `NETWORKS` (PayAI for mainnet dual) |
+| `FACILITATOR_URL` | PayAI only (default `https://facilitator.payai.network`) — never the CDP API URL |
+| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | Base via CDP; both required. Missing/401 → still listen on Solana |
+| `CDP_WALLET_SECRET` | Optional; unused when `PAY_TO_EVM_ADDRESS` is an EOA |
 | `PRICE_USD` | Single option `/v1/option/price` — `0.01`–`1.00` (default `0.05`) |
 | `PRICE_IMPLIED_VOL_USD` | IV solve `/v1/option/implied-vol` — default `0.03` |
 | `PRICE_VOL_SURFACE_USD` | Invert premiums `/v1/volatility/surface` — default `0.10` |
@@ -533,23 +536,21 @@ PAY_TO_ADDRESS=YourSolanaBase58Address
 # or NETWORKS=base + PAY_TO_EVM_ADDRESS=0x...
 ```
 
-### CDP facilitator
+### CDP facilitator (second rail — not `FACILITATOR_URL`)
+
+Base uses a **separate** CDP-authenticated client (`createCdpFacilitatorClient({ apiKeyId, apiKeySecret })`). Do **not** point `FACILITATOR_URL` at `api.cdp.coinbase.com`, and do **not** send CDP JWTs to PayAI.
 
 ```bash
-FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402
-NETWORKS=base
-# or multi: NETWORKS=base,solana  (+ PAY_TO_EVM_ADDRESS and PAY_TO_SVM_ADDRESS)
+NETWORKS=solana,base
+FACILITATOR_URL=https://facilitator.payai.network   # PayAI / Solana
+CDP_API_KEY_ID=...
+CDP_API_KEY_SECRET=...
+# CDP_WALLET_SECRET=   # optional; unused when payTo is an EOA
 ```
 
-If the facilitator requires auth (CDP), install `@coinbase/cdp-sdk` and replace the client in `src/x402/facilitator.ts`:
+Boot probes PayAI `getSupported` (no auth) and CDP `getSupported` (CDP client only). CDP 401 or missing keys are logged; the process **still listens** on Solana/PayAI.
 
-```ts
-import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
-// return createCdpFacilitatorClient(); // uses CDP_API_KEY_ID / CDP_API_KEY_SECRET
-```
-
-> **Fail-fast:** the server rejects routes the facilitator does not support (e.g.
-> `NETWORKS=solana` with `https://x402.org/facilitator`).
+`GET /health` reports `facilitators: { payai, cdp, base, solana }` (names only, never secrets).
 
 ## Bazaar discovery checklist
 
@@ -706,7 +707,8 @@ Required / recommended for a Solana mainnet public API:
 | `PRICE_IMPLIED_VOL_USD` | `0.03` | Optional override |
 | `PRICE_PORTFOLIO_GREEKS_USD` | `0.15` | Optional override |
 | `PRICE_PORTFOLIO_SCENARIO_USD` | `0.25` | Optional override |
-| `FACILITATOR_URL` | `https://facilitator.payai.network` | Must support every network in `NETWORKS` |
+| `FACILITATOR_URL` | `https://facilitator.payai.network` | PayAI only — never the CDP API host |
+| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | (Railway secrets) | Enables Base via CDP; Solana stays on PayAI |
 | `PUBLIC_BASE_URL` | `https://your-app.up.railway.app` | Set after first deploy / custom domain |
 | `CORS_ORIGIN` | your frontend origin(s) | Avoid `*` in production |
 
@@ -771,9 +773,9 @@ docker run --rm -p 4021:4021 \
 - [ ] `PAY_TO_ADDRESS` is a public address you control  
 - [ ] `TRUST_PROXY=1` behind Railway  
 - [ ] `CORS_ORIGIN` locked down if a browser frontend calls the API  
-- [ ] Facilitator matches `NETWORKS` (PayAI for Solana + Base mainnet)  
+- [ ] Two facilitators: PayAI URL for Solana; CDP keys for Base (not one CDP URL)  
 - [ ] Unpaid `POST /v1/option/price` returns **402** with accepts for every enabled network  
-- [ ] `GET /health` shows both `payToSvm` and `payToEvm` when dual-chain  
+- [ ] `GET /health` shows `facilitators.{payai,cdp,base,solana}` — no wallets on free routes  
 
 Node **20+** required (image uses **22**).
 

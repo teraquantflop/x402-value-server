@@ -31,14 +31,20 @@ import { impliedVolRouter } from "./routes/impliedVol.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { surfacePricingRouter } from "./routes/surfacePricing.js";
 import {
+  buildFacilitators,
   createFacilitatorClient,
-  createFacilitatorClients,
+  type BuiltFacilitators,
 } from "./x402/facilitator.js";
 import { createResourceServer } from "./x402/resourceServer.js";
 import { buildPaidRoutes } from "./x402/routeConfig.js";
 import { buildWellKnownX402 } from "./discovery/catalog.js";
 import { mountMcpRoutes } from "./mcp/http.js";
 import type { x402ResourceServer } from "@x402/core/server";
+
+export type AppLocals = {
+  x402ResourceServer: x402ResourceServer | null;
+  facilitators: BuiltFacilitators | null;
+};
 
 /**
  * Register free discovery routes on the Express app root.
@@ -89,14 +95,15 @@ export function createApp(): Express {
   app.use(idempotencyMiddleware(idempotencyStore));
 
   let resourceServer: x402ResourceServer | null = null;
+  let builtFacilitators: BuiltFacilitators | null = null;
 
   if (config.skipPayment) {
     console.warn(
       "[warn] SKIP_PAYMENT=1 — x402 payment gate is DISABLED (local/debug only)",
     );
   } else {
-    const facilitators = createFacilitatorClients(config);
-    resourceServer = createResourceServer(facilitators, config);
+    builtFacilitators = buildFacilitators(config);
+    resourceServer = createResourceServer(builtFacilitators.clients, config);
     const paidRoutes = buildPaidRoutes(config);
     const payMw = paymentMiddleware(paidRoutes, resourceServer);
     // Payment first: unpaid → 402 before Zod / stashed JSON errors
@@ -117,6 +124,10 @@ export function createApp(): Express {
       mountMcpRoutes(app, config, resourceServer);
     }
   }
+
+  const locals = app.locals as AppLocals;
+  locals.x402ResourceServer = resourceServer;
+  locals.facilitators = builtFacilitators;
 
   // Paid handlers: Zod validation only runs after payment gate above
   app.use(optionRouter);
