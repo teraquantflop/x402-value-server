@@ -127,8 +127,8 @@ export interface FacilitatorStatus {
     enabled: boolean;
     lastProbe: "200" | "401" | "skipped";
   };
-  /** Which facilitator handles Base mainnet accepts */
-  base: "cdp" | "payai" | "none";
+  /** Which facilitator handles Base mainnet accepts (CDP-only; never PayAI) */
+  base: "cdp" | "none";
   /** Which facilitator handles Solana mainnet accepts */
   solana: "payai" | "none";
 }

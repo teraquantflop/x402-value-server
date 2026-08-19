@@ -48,8 +48,19 @@ import {
 import { priceFromSurface } from "../services/priceFromSurface.js";
 import { scenarioFromSurface } from "../services/scenarioFromSurface.js";
 
-function acceptsForPrice(config: AppConfig, price: string) {
-  return config.networkIds.map((network) => ({
+import { settlementNetworkIds } from "./settlementNetworks.js";
+
+export type BuildPaidRoutesOptions = {
+  /** Base mainnet accepts only when CDP is enabled (never against PayAI). */
+  cdpEnabled: boolean;
+};
+
+function acceptsForPrice(
+  config: AppConfig,
+  price: string,
+  cdpEnabled: boolean,
+) {
+  return settlementNetworkIds(config, cdpEnabled).map((network) => ({
     scheme: "exact" as const,
     price,
     network,
@@ -120,7 +131,10 @@ function scenarioFromSurfaceExampleOutput() {
   );
 }
 
-export function buildPaidRoutes(config: AppConfig) {
+export function buildPaidRoutes(
+  config: AppConfig,
+  opts: BuildPaidRoutesOptions = { cdpEnabled: false },
+) {
   const optionMeta = optionPriceDiscovery(config);
   const ivMeta = impliedVolDiscovery(config);
   const surfaceMeta = volatilitySurfaceDiscovery(config);
@@ -133,10 +147,11 @@ export function buildPaidRoutes(config: AppConfig) {
   const portfolioScenarioOut = portfolioScenarioExampleOutput();
   const priceFromSurfOut = priceFromSurfaceExampleOutput();
   const scenarioFromSurfOut = scenarioFromSurfaceExampleOutput();
+  const cdpEnabled = opts.cdpEnabled;
 
   return {
     "POST /v1/option/price": {
-      accepts: acceptsForPrice(config, config.priceDollarString),
+      accepts: acceptsForPrice(config, config.priceDollarString, cdpEnabled),
       description: optionMeta.description,
       mimeType: optionMeta.mimeType,
       serviceName: optionMeta.serviceName,
@@ -162,7 +177,7 @@ export function buildPaidRoutes(config: AppConfig) {
     },
 
     "POST /v1/option/implied-vol": {
-      accepts: acceptsForPrice(config, config.priceImpliedVolDollarString),
+      accepts: acceptsForPrice(config, config.priceImpliedVolDollarString, cdpEnabled),
       description: ivMeta.description,
       mimeType: ivMeta.mimeType,
       serviceName: ivMeta.serviceName,
@@ -187,7 +202,7 @@ export function buildPaidRoutes(config: AppConfig) {
     },
 
     "POST /v1/volatility/surface": {
-      accepts: acceptsForPrice(config, config.priceVolSurfaceDollarString),
+      accepts: acceptsForPrice(config, config.priceVolSurfaceDollarString, cdpEnabled),
       description: surfaceMeta.description,
       mimeType: surfaceMeta.mimeType,
       serviceName: surfaceMeta.serviceName,
@@ -215,7 +230,7 @@ export function buildPaidRoutes(config: AppConfig) {
     },
 
     "POST /v1/portfolio/greeks": {
-      accepts: acceptsForPrice(config, config.pricePortfolioGreeksDollarString),
+      accepts: acceptsForPrice(config, config.pricePortfolioGreeksDollarString, cdpEnabled),
       description: portfolioMeta.description,
       mimeType: portfolioMeta.mimeType,
       serviceName: portfolioMeta.serviceName,
@@ -240,10 +255,7 @@ export function buildPaidRoutes(config: AppConfig) {
     },
 
     "POST /v1/portfolio/scenario": {
-      accepts: acceptsForPrice(
-        config,
-        config.pricePortfolioScenarioDollarString,
-      ),
+      accepts: acceptsForPrice(config, config.pricePortfolioScenarioDollarString, cdpEnabled),
       description: scenarioMeta.description,
       mimeType: scenarioMeta.mimeType,
       serviceName: scenarioMeta.serviceName,
@@ -271,10 +283,7 @@ export function buildPaidRoutes(config: AppConfig) {
     },
 
     "POST /v1/option/price-from-surface": {
-      accepts: acceptsForPrice(
-        config,
-        config.priceOptionFromSurfaceDollarString,
-      ),
+      accepts: acceptsForPrice(config, config.priceOptionFromSurfaceDollarString, cdpEnabled),
       description: priceSurfMeta.description,
       mimeType: priceSurfMeta.mimeType,
       serviceName: priceSurfMeta.serviceName,
@@ -299,10 +308,7 @@ export function buildPaidRoutes(config: AppConfig) {
     },
 
     "POST /v1/option/scenario-from-surface": {
-      accepts: acceptsForPrice(
-        config,
-        config.priceScenarioFromSurfaceDollarString,
-      ),
+      accepts: acceptsForPrice(config, config.priceScenarioFromSurfaceDollarString, cdpEnabled),
       description: scenSurfMeta.description,
       mimeType: scenSurfMeta.mimeType,
       serviceName: scenSurfMeta.serviceName,

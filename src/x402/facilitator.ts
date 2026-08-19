@@ -20,6 +20,7 @@ import {
   normalizeCdpApiKeySecret,
 } from "./cdpCredentials.js";
 import { setCdpLastProbe, type CdpLastProbe } from "./cdpProbeState.js";
+import { logSettlementNetworks } from "./settlementNetworks.js";
 
 export const PAYAI_DEFAULT_URL = "https://facilitator.payai.network";
 export const CDP_FACILITATOR_URL =
@@ -174,30 +175,38 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
   }
 
   async getSupported() {
+    // CDP: always return Base kinds so HTTPServer.initialize() validateRouteConfiguration
+    // never throws missing_facilitator for eip155:8453 (nowcast does not init Base on PayAI).
+    if (this.mode === "cdp-synthesize-base") {
+      try {
+        const supported = await this.inner.getSupported();
+        const kinds = (supported.kinds ?? []).filter((k) =>
+          this.networks.has(k.network),
+        );
+        if (kinds.some((k) => k.network === "eip155:8453")) {
+          return { ...supported, kinds };
+        }
+        console.warn(
+          `[facilitator] ${this.name} getSupported missing Base (warn-only); synthesizing eip155:8453`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[facilitator] ${this.name} getSupported failed (warn-only); synthesizing eip155:8453:`,
+          msg,
+        );
+      }
+      return syntheticCdpBaseSupported();
+    }
+
     try {
       const supported = await this.inner.getSupported();
       const kinds = (supported.kinds ?? []).filter((k) =>
         this.networks.has(k.network),
       );
-      if (kinds.length > 0) {
-        return { ...supported, kinds };
-      }
-      if (this.mode === "cdp-synthesize-base") {
-        console.warn(
-          `[facilitator] ${this.name} getSupported empty (warn-only); synthesizing eip155:8453`,
-        );
-        return syntheticCdpBaseSupported();
-      }
-      return { ...supported, kinds: [] };
+      return { ...supported, kinds };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (this.mode === "cdp-synthesize-base") {
-        console.warn(
-          `[facilitator] ${this.name} getSupported failed (warn-only); synthesizing eip155:8453:`,
-          msg,
-        );
-        return syntheticCdpBaseSupported();
-      }
       console.warn(
         `[facilitator] ${this.name} getSupported failed; skipping it:`,
         msg,
@@ -298,8 +307,9 @@ export function buildFacilitators(config: AppConfig): BuiltFacilitators {
     `[facilitator] PayAI enabled url=${payaiUrl}` +
       (cdpEnabled
         ? " (Solana-only; Base via CDP)"
-        : " (Solana; Base fallback if NETWORKS includes base)"),
+        : " (Solana; Base only if CDP configured)"),
   );
+  logSettlementNetworks(config, cdpEnabled);
 
   return {
     clients,

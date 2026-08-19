@@ -87,7 +87,8 @@ describe("dual Solana + Base settlement discovery", () => {
     expect(base?.scheme).toBe("exact");
 
     expect(card.settlement.facilitators.payai).toBe(true);
-    expect(card.settlement.facilitators.base).toMatch(/cdp|payai/);
+    // Base is CDP-only; without CDP keys in this fixture, rail is "none"
+    expect(card.settlement.facilitators.base).toMatch(/cdp|none/);
   });
 
   it("well-known inherits dual settlement without wallets", () => {
@@ -102,7 +103,7 @@ describe("dual Solana + Base settlement discovery", () => {
   });
 
   it("buildPaidRoutes emits accepts for both networks on every paid path", () => {
-    const routes = buildPaidRoutes(config);
+    const routes = buildPaidRoutes(config, { cdpEnabled: true });
     const keys = Object.keys(routes);
     expect(keys.length).toBeGreaterThanOrEqual(5);
 

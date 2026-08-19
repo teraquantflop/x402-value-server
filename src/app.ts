@@ -108,8 +108,12 @@ export function createApp(): Express {
     );
   } else {
     builtFacilitators = buildFacilitators(config);
-    resourceServer = createResourceServer(builtFacilitators.clients, config);
-    const paidRoutes = buildPaidRoutes(config);
+    resourceServer = createResourceServer(builtFacilitators.clients, config, {
+      cdpEnabled: builtFacilitators.cdpEnabled,
+    });
+    const paidRoutes = buildPaidRoutes(config, {
+      cdpEnabled: builtFacilitators.cdpEnabled,
+    });
     const payMw = paymentMiddleware(paidRoutes, resourceServer);
     // Payment first: unpaid → 402 before Zod / stashed JSON errors
     app.use(skipPaymentIfFreeTier(payMw));
@@ -123,7 +127,9 @@ export function createApp(): Express {
     if (config.skipPayment) {
       // Lightweight PayAI client for MCP structure when payment gate is off
       const facilitator = createFacilitatorClient(config);
-      resourceServer = createResourceServer(facilitator, config);
+      resourceServer = createResourceServer(facilitator, config, {
+        cdpEnabled: false,
+      });
     }
     if (resourceServer) {
       mountMcpRoutes(app, config, resourceServer);

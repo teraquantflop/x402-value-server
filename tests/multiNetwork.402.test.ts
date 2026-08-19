@@ -88,6 +88,9 @@ describe("multi-network 402 accepts (Solana + Base)", () => {
     process.env.PAY_TO_EVM_ADDRESS = BASE_PAYTO;
     process.env.FACILITATOR_URL = "https://facilitator.payai.network";
     process.env.PUBLIC_BASE_URL = "http://localhost:4021";
+    // Base accepts require CDP rail (never PayAI). Dummy Ed25519-length secret.
+    process.env.CDP_API_KEY_ID = "organizations/test/apiKeys/test";
+    process.env.CDP_API_KEY_SECRET = Buffer.alloc(64, 7).toString("base64");
 
     const { createApp } = await import("../src/app.js");
     const app = createApp();
@@ -117,6 +120,13 @@ describe("multi-network 402 accepts (Solana + Base)", () => {
     expect(body.payToSvm).toBeUndefined();
     expect(body.payToEvm).toBeUndefined();
     expect(body.facilitators?.payai).toBe(true);
+    // base rail is CDP when keys are set (shape may be nested cdp.enabled)
+    const fac = body.facilitators as {
+      payai?: boolean;
+      base?: string;
+      cdp?: boolean | { enabled?: boolean };
+    };
+    expect(fac.base).toBe("cdp");
   });
 
   it("well-known settlement lists networks without payTo", async () => {

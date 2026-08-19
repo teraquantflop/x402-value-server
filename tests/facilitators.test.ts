@@ -104,7 +104,7 @@ describe("facilitatorStatus", () => {
     expect(status).toEqual({
       payai: true,
       cdp: { enabled: false, lastProbe: "skipped" },
-      base: "payai",
+      base: "none",
       solana: "payai",
     });
   });
@@ -140,6 +140,84 @@ describe("buildFacilitators nowcast order", () => {
       }),
     );
     expect(built.payaiUrl).toBe(PAYAI_DEFAULT_URL);
+  });
+});
+
+describe("initialize without PayAI Base + CDP 401", () => {
+  it("PayAI has no eip155:8453, CDP getSupported 401, initialize still succeeds; Base verify → CDP", async () => {
+    const { x402ResourceServer } = await import("@x402/core/server");
+    const { ExactEvmScheme } = await import("@x402/evm/exact/server");
+    const { ExactSvmScheme } = await import("@x402/svm/exact/server");
+
+    const cdpVerify = vi.fn().mockResolvedValue({ isValid: true });
+    const payaiVerify = vi.fn().mockResolvedValue({ isValid: true });
+
+    const cdpInner: FacilitatorClient = {
+      verify: cdpVerify,
+      settle: vi.fn(),
+      getSupported: vi
+        .fn()
+        .mockRejectedValue(
+          new Error("Facilitator getSupported failed (401): Unauthorized"),
+        ),
+    };
+    const payaiInner: FacilitatorClient = {
+      verify: payaiVerify,
+      settle: vi.fn(),
+      getSupported: vi.fn().mockResolvedValue({
+        kinds: [{ network: SOLANA_NET, scheme: "exact", x402Version: 2 }],
+        extensions: [],
+        signers: {},
+      }),
+    };
+
+    const cdp = new NetworkScopedFacilitator(
+      cdpInner,
+      new Set(["eip155:8453"]),
+      "cdp",
+      "cdp-synthesize-base",
+    );
+    const payai = new NetworkScopedFacilitator(
+      payaiInner,
+      new Set([SOLANA_NET]),
+      "payai",
+      "filter",
+    );
+
+    // PayAI must not advertise Base
+    const payaiKinds = await payai.getSupported();
+    expect(payaiKinds.kinds.some((k) => k.network === "eip155:8453")).toBe(
+      false,
+    );
+
+    const server = new x402ResourceServer([cdp, payai]);
+    server.register("eip155:8453", new ExactEvmScheme());
+    server.register(SOLANA_NET, new ExactSvmScheme());
+
+    await expect(server.initialize()).resolves.toBeUndefined();
+
+    const payload = { x402Version: 2 } as Parameters<
+      FacilitatorClient["verify"]
+    >[0];
+    const baseReqs = {
+      network: "eip155:8453",
+      scheme: "exact",
+    } as Parameters<FacilitatorClient["verify"]>[1];
+
+    // Dispatch like the resource server: get facilitator for Base
+    const client = (
+      server as unknown as {
+        getFacilitatorClient: (
+          v: number,
+          n: string,
+          s: string,
+        ) => FacilitatorClient | undefined;
+      }
+    ).getFacilitatorClient(2, "eip155:8453", "exact");
+    expect(client).toBe(cdp);
+    await client!.verify(payload, baseReqs);
+    expect(cdpVerify).toHaveBeenCalledTimes(1);
+    expect(payaiVerify).not.toHaveBeenCalled();
   });
 });
 

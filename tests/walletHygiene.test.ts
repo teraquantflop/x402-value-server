@@ -74,9 +74,10 @@ describe("wallet hygiene on free routes", () => {
     };
     expect(body.payTo).toBeUndefined();
     expect(body.facilitators?.payai).toBe(true);
-    expect(body.facilitators?.base === "payai" || body.facilitators?.base === "cdp").toBe(
-      true,
-    );
+    // base: cdp | none (never PayAI — Base mainnet is CDP-only)
+    expect(
+      body.facilitators?.base === "cdp" || body.facilitators?.base === "none",
+    ).toBe(true);
   });
 
   it("unpaid 402 still includes payTo in PAYMENT-REQUIRED", async () => {

@@ -365,7 +365,8 @@ export function facilitatorStatus(
       // Keys present ⇒ enabled stays true even if lastProbe is 401
       lastProbe: enabled ? getCdpLastProbe() : "skipped",
     },
-    base: hasBase ? (enabled ? "cdp" : "payai") : "none",
+    // Base mainnet is CDP-only — never report PayAI as the Base rail
+    base: hasBase ? (enabled ? "cdp" : "none") : "none",
     solana: hasSolana ? "payai" : "none",
   };
 }
