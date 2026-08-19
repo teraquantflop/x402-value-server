@@ -57,7 +57,7 @@ export const SERVICE_CATALOG = {
     "Delta/vega hedging loops for automated market makers",
     "Net Greeks and MTM for multi-leg books (long/short signed quantity)",
     "Scenario P&L under relative spot/vol shocks and calendar time decay",
-    "MCP hosts (Claude, Cursor, Windsurf) calling price_option / implied_vol_surface tools",
+    "MCP hosts (Claude, Cursor, Windsurf) calling the full tool set (price, IV, surface, portfolio)",
   ],
   markets: [
     "power_and_energy",
@@ -74,7 +74,7 @@ export const SERVICE_CATALOG = {
     "Per-row underlyings so power/commodity forwards can differ by maturity",
     "Multi-leg portfolio net Greeks, MTM, optional dollar Greeks, scenario reprice",
     "x402 USDC exact on Solana mainnet and Base mainnet; free fixed demo for discovery",
-    "MCP façade: price_option and implied_vol_surface tools with the same settlement model",
+    "MCP façade: one tool per paid HTTP route (same services + USDC prices)",
   ],
 } as const;
 
@@ -397,7 +397,16 @@ export function buildServiceCard(config: AppConfig) {
           enabled: true,
           path: config.mcpPath,
           url: `${base}${config.mcpPath}`,
-          tools: ["price_option", "implied_vol_surface", "service_info"],
+          tools: [
+            "service_info",
+            "price_option",
+            "implied_vol",
+            "implied_vol_surface",
+            "price_from_surface",
+            "scenario_from_surface",
+            "portfolio_greeks",
+            "portfolio_scenario",
+          ],
           transport: "streamable-http-stateless",
           note: "MCP is a façade over the same pricing services; USDC payment may be required on paid tools.",
         }
@@ -454,7 +463,7 @@ export function buildServiceCard(config: AppConfig) {
                 method: "POST",
                 path: config.mcpPath,
                 description:
-                  "MCP Streamable HTTP (stateless): price_option, implied_vol_surface, service_info",
+                  "MCP Streamable HTTP (stateless): service_info + one paid tool per HTTP route",
               },
             ]
           : []),

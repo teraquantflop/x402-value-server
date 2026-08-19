@@ -14,7 +14,7 @@ Agents discover capabilities via **Bazaar** metadata and `GET /`, pay **USDC** p
 - **POST `/v1/portfolio/greeks`** — net MTM + Greeks for multi-leg books (long/short via signed quantity)
 - **POST `/v1/portfolio/scenario`** — base + shocked MTM/Greeks under spot/vol/time scenarios (scalar σ per leg)
 - **GET|POST `/v1/demo/option-price`** — **free** fixed ATM sample (live engine, constant inputs) for discovery indexes
-- **POST `/mcp`** — **MCP Streamable HTTP** façade (`price_option`, `implied_vol_surface`, free `service_info`)
+- **POST `/mcp`** — **MCP Streamable HTTP** façade (one paid tool per HTTP route + free `service_info`)
 - Settlement: **Solana mainnet (PayAI) + Base mainnet (CDP when keys set)** dual USDC (exact); also Base Sepolia / Solana Devnet for test
 - 402 challenges list **one accept per network** — clients pay on Solana **or** Base
 - Configurable micropayments **$0.01–$1.00** per endpoint
@@ -182,11 +182,18 @@ Stateless **Streamable HTTP** at `POST /mcp` (path overridable via `MCP_PATH`).
 
 | Tool | Payment | Maps to |
 |------|---------|---------|
-| `service_info` | free | Discovery snapshot |
-| `price_option` | `PRICE_USD` USDC | same service as `POST /v1/option/price` |
-| `implied_vol_surface` | `PRICE_VOL_SURFACE_USD` | same as `POST /v1/volatility/surface` |
+| MCP tool | Price env | HTTP twin |
+|----------|-----------|-----------|
+| `service_info` | free | discovery snapshot |
+| `price_option` | `PRICE_USD` | `POST /v1/option/price` |
+| `implied_vol` | `PRICE_IMPLIED_VOL_USD` | `POST /v1/option/implied-vol` |
+| `implied_vol_surface` | `PRICE_VOL_SURFACE_USD` | `POST /v1/volatility/surface` |
+| `price_from_surface` | `PRICE_OPTION_FROM_SURFACE_USD` | `POST /v1/option/price-from-surface` |
+| `scenario_from_surface` | `PRICE_SCENARIO_FROM_SURFACE_USD` | `POST /v1/option/scenario-from-surface` |
+| `portfolio_greeks` | `PRICE_PORTFOLIO_GREEKS_USD` | `POST /v1/portfolio/greeks` |
+| `portfolio_scenario` | `PRICE_PORTFOLIO_SCENARIO_USD` | `POST /v1/portfolio/scenario` |
 
-HTTP x402 routes remain the source of truth; MCP calls the same TypeScript services (no HTTP self-loop). Payment uses `@x402/mcp` `createPaymentWrapper` with the same Solana/Base accepts as HTTP.
+HTTP x402 routes remain the source of truth; MCP calls the same TypeScript services (no HTTP self-loop). Payment uses `@x402/mcp` `createPaymentWrapper` with the same Solana/Base accepts as HTTP. Bad `Accept` on `POST /mcp` → **406** JSON-RPC hint (retry with `application/json, text/event-stream`).
 
 **Cursor / Claude-compatible remote config (example):**
 

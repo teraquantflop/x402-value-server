@@ -91,7 +91,7 @@ export function buildLlmsTxt(config: AppConfig): string {
   }
   if (config.mcpEnabled) {
     lines.push(
-      `- [MCP Streamable HTTP](${abs(base, config.mcpPath)}) — tools: \`price_option\`, \`implied_vol_surface\`, \`service_info\``,
+      `- [MCP Streamable HTTP](${abs(base, config.mcpPath)}) — tools: \`service_info\` (free), \`price_option\`, \`implied_vol\`, \`implied_vol_surface\`, \`price_from_surface\`, \`scenario_from_surface\`, \`portfolio_greeks\`, \`portfolio_scenario\``,
     );
   }
 
@@ -100,12 +100,13 @@ export function buildLlmsTxt(config: AppConfig): string {
     "## When to call which tool",
     "",
     "- **price / price_option** — model inputs known; need fair value + Greeks (equity spot or power forward mark as S).",
-    "- **implied-vol** — one market premium to invert; not a full book.",
+    "- **implied-vol / implied_vol** — one market premium to invert; not a full book.",
     "- **surface / implied_vol_surface** — multi-strike multi-maturity premiums; underlyings may differ by maturity.",
-    "- **portfolio/greeks** — net risk on a multi-leg book.",
-    "- **portfolio/scenario** — shocked MTM under spot/vol/time (scalar σ per leg).",
     "- **price-from-surface** — price on a submitted smile (TV bilinear in k,T); wingRule=flat_vol.",
     "- **scenario-from-surface** — base vs scenario on same interpolator; sticky moneyness|strike|fixed_vol; smileTwist = vol pts per unit k.",
+    "- **portfolio/greeks / portfolio_greeks** — net risk on a multi-leg scalar-σ book.",
+    "- **portfolio/scenario / portfolio_scenario** — shocked MTM under spot/vol/time (scalar σ per leg).",
+    "- **service_info** — free MCP discovery snapshot (prices, paths, tools).",
     "",
     "## How agents should pay",
     "",
