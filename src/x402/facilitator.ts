@@ -132,8 +132,10 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
     paymentRequirements: Parameters<FacilitatorClient["verify"]>[1],
   ) {
     const network = String(paymentRequirements.network);
+    // Bind to inner — do not wrap/strip Authorization; CDP JWT stays on the client.
+    const verify = this.inner.verify.bind(this.inner);
     try {
-      const result = await this.inner.verify(paymentPayload, paymentRequirements);
+      const result = await verify(paymentPayload, paymentRequirements);
       const valid =
         result && typeof result === "object" && "isValid" in result
           ? Boolean((result as { isValid?: boolean }).isValid)
@@ -158,8 +160,9 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
     paymentRequirements: Parameters<FacilitatorClient["settle"]>[1],
   ) {
     const network = String(paymentRequirements.network);
+    const settle = this.inner.settle.bind(this.inner);
     try {
-      const result = await this.inner.settle(paymentPayload, paymentRequirements);
+      const result = await settle(paymentPayload, paymentRequirements);
       console.log(
         `[facilitator] settle network=${network} facilitator=${this.name} status=ok`,
       );
@@ -242,31 +245,64 @@ function createPayAiClient(
   );
 }
 
+function cdpClientHasJwt(client: FacilitatorClient): boolean {
+  const c = client as FacilitatorClient & {
+    createAuthHeaders?: unknown;
+    _createAuthHeaders?: unknown;
+  };
+  return (
+    typeof c.createAuthHeaders === "function" ||
+    typeof c._createAuthHeaders === "function"
+  );
+}
+
+/**
+ * Authenticated CDP client for Base. Credentials come explicitly from env
+ * (trimmed). verify/settle are bound to the raw CDP client — we never strip
+ * or rewrite Authorization; NetworkScoped only overrides getSupported kinds.
+ */
 function createCdpScoped(config: AppConfig): {
   scoped: NetworkScopedFacilitator;
   inner: FacilitatorClient;
 } | null {
-  if (!config.cdpConfigured || !config.cdpApiKeyId || !config.cdpApiKeySecret) {
+  // Prefer live env at construction time (explicit), fall back to loaded config.
+  const apiKeyId = (
+    process.env.CDP_API_KEY_ID ??
+    config.cdpApiKeyId ??
+    ""
+  ).trim();
+  // trim + PEM \n unescape for EC keys; Ed25519 base64 unchanged
+  const apiKeySecret = normalizeCdpApiKeySecret(
+    process.env.CDP_API_KEY_SECRET ?? config.cdpApiKeySecret ?? "",
+  );
+
+  if (!apiKeyId || !apiKeySecret) {
     return null;
   }
 
-  const apiKeyId = config.cdpApiKeyId.trim();
-  const apiKeySecret = normalizeCdpApiKeySecret(config.cdpApiKeySecret);
   const secretMeta = describeCdpSecretMeta(apiKeySecret);
-
-  console.log(
-    `[facilitator] CDP via createCdpFacilitatorClient` +
-      ` secretLen=${secretMeta.length}` +
-      ` secretStartsWithBegin=${secretMeta.startsWithBegin}` +
-      ` (Base verify/settle JWT; FACILITATOR_URL stays PayAI-only)`,
-  );
 
   try {
     const inner = createCdpFacilitatorClient({
       apiKeyId,
       apiKeySecret,
-      baseUrl: CDP_FACILITATOR_URL,
     });
+    const jwtAttached = cdpClientHasJwt(inner);
+    console.log(
+      `[facilitator] CDP createCdpFacilitatorClient` +
+        ` keyIdLen=${apiKeyId.length}` +
+        ` secretLen=${secretMeta.length}` +
+        ` secretStartsWithBegin=${secretMeta.startsWithBegin}` +
+        ` jwtAttached=${jwtAttached}`,
+    );
+    if (!jwtAttached) {
+      console.warn(
+        "[facilitator] CDP client missing createAuthHeaders — verify will be unauthenticated",
+      );
+    }
+
+    // Scope getSupported to Base (+ synthesize on 401). verify/settle → inner.bind
+    // so Authorization JWT from createCdpFacilitatorClient is untouched.
     const scoped = new NetworkScopedFacilitator(
       inner,
       new Set(CDP_BASE_NETWORKS),
