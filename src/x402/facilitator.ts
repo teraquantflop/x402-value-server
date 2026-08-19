@@ -1,9 +1,11 @@
 /**
- * Facilitator clients: PayAI (Solana) + Coinbase CDP (Base) when keys set.
- * Nowcast semantics:
- *   - Keys present → register CDP for eip155:8453 and keep Base in 402 accepts
- *   - getSupported is warn-only; never drop Base because of 401/empty
- *   - PayAI stays Solana-only when CDP is enabled
+ * Facilitator clients — nowcast two-client dispatch (no Python port):
+ *   1) CDP first (eip155:8453 only) via createCdpFacilitatorClient + NetworkScoped
+ *   2) PayAI second (Solana-only when CDP on) via HTTPFacilitatorClient(FACILITATOR_URL)
+ *
+ * initialize() maps Base → CDP (earlier wins). PayAI is Solana-scoped so Base
+ * never hits PayAI even on try-all fallback. GET /supported 401 is warn-only;
+ * CDP synthesizes Base kinds so accepts stay.
  */
 import {
   createCdpFacilitatorClient,
@@ -23,10 +25,8 @@ export const PAYAI_DEFAULT_URL = "https://facilitator.payai.network";
 export const CDP_FACILITATOR_URL =
   SDK_CDP_FACILITATOR_URL || "https://api.cdp.coinbase.com/platform/v2/x402";
 
-/** Base mainnet only — CDP must not steal Solana kinds from PayAI. */
 export const CDP_BASE_NETWORKS = Object.freeze(["eip155:8453"] as const);
 
-/** Solana networks PayAI is allowed to advertise when CDP owns Base. */
 export const PAYAI_SOLANA_NETWORKS = Object.freeze([
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -40,45 +40,34 @@ export {
 
 export type FacilitatorProbeResult = {
   payaiOk: boolean;
-  /** Keys present → CDP is enabled regardless of probe. */
   cdpEnabled: boolean;
-  /** warn-only probe outcome */
   cdpLastProbe: CdpLastProbe;
   payaiUrl: string;
   errors: string[];
 };
 
 export type BuiltFacilitators = {
+  /** Registered on x402ResourceServer — CDP first when present (nowcast order). */
   clients: FacilitatorClient[];
   payai: FacilitatorClient;
-  /** Scoped CDP client used by resourceServer (synthesizes Base kinds on probe fail). */
   cdp: FacilitatorClient | null;
-  /** Raw CDP client for warn-only getSupported probe status (200|401). */
   cdpInner: FacilitatorClient | null;
   payaiUrl: string;
   cdpEnabled: boolean;
 };
 
-/**
- * Synthetic Base kinds so initialize() maps eip155:8453 → CDP even when
- * GET /supported 401s. Verify/settle still use the real CDP client.
- * Matches nowcast: keys set ⇒ Base enabled; getSupported is not a gate.
- */
 export function syntheticCdpBaseSupported() {
   return {
     kinds: CDP_BASE_NETWORKS.map((network) => ({
       x402Version: 2,
-      scheme: "exact",
-      network,
+      scheme: "exact" as const,
+      network: network as `${string}:${string}`,
     })),
     extensions: [] as string[],
     signers: {} as Record<string, string[]>,
   };
 }
 
-/**
- * Resolve PayAI facilitator URL. Never allow pointing the PayAI HTTP client at CDP.
- */
 export function resolvePayAiUrl(facilitatorUrl: string | undefined): string {
   const raw = (facilitatorUrl || PAYAI_DEFAULT_URL).replace(/\/$/, "");
   try {
@@ -104,11 +93,21 @@ export function resolvePayAiUrl(facilitatorUrl: string | undefined): string {
   return raw;
 }
 
+function statusFromError(err: unknown): number | undefined {
+  if (err && typeof err === "object" && "statusCode" in err) {
+    const n = (err as { statusCode?: unknown }).statusCode;
+    if (typeof n === "number") return n;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = msg.match(/\b(401|403|404|500|502|503)\b/);
+  return m ? Number(m[1]) : undefined;
+}
+
 type ScopeMode = "filter" | "cdp-synthesize-base";
 
 /**
  * Advertise only selected networks so initialize() maps Base → CDP / Solana → PayAI.
- * CDP mode: on getSupported 401/empty, synthesize Base kinds (warn-only — never drop Base).
+ * Mirrors nowcast _NetworkScopedFacilitator, plus CDP synthesize-on-401 (warn-only).
  */
 export class NetworkScopedFacilitator implements FacilitatorClient {
   readonly name: string;
@@ -122,18 +121,56 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
     this.name = name;
   }
 
-  verify(
+  /** Test helper */
+  get innerClient(): FacilitatorClient {
+    return this.inner;
+  }
+
+  async verify(
     paymentPayload: Parameters<FacilitatorClient["verify"]>[0],
     paymentRequirements: Parameters<FacilitatorClient["verify"]>[1],
   ) {
-    return this.inner.verify(paymentPayload, paymentRequirements);
+    const network = String(paymentRequirements.network);
+    try {
+      const result = await this.inner.verify(paymentPayload, paymentRequirements);
+      const valid =
+        result && typeof result === "object" && "isValid" in result
+          ? Boolean((result as { isValid?: boolean }).isValid)
+          : undefined;
+      console.log(
+        `[facilitator] verify network=${network} facilitator=${this.name} status=ok` +
+          (valid === undefined ? "" : ` isValid=${valid}`),
+      );
+      return result;
+    } catch (err) {
+      const status = statusFromError(err);
+      console.warn(
+        `[facilitator] verify network=${network} facilitator=${this.name} status=${status ?? "error"}:`,
+        err instanceof Error ? err.message : err,
+      );
+      throw err;
+    }
   }
 
-  settle(
+  async settle(
     paymentPayload: Parameters<FacilitatorClient["settle"]>[0],
     paymentRequirements: Parameters<FacilitatorClient["settle"]>[1],
   ) {
-    return this.inner.settle(paymentPayload, paymentRequirements);
+    const network = String(paymentRequirements.network);
+    try {
+      const result = await this.inner.settle(paymentPayload, paymentRequirements);
+      console.log(
+        `[facilitator] settle network=${network} facilitator=${this.name} status=ok`,
+      );
+      return result;
+    } catch (err) {
+      const status = statusFromError(err);
+      console.warn(
+        `[facilitator] settle network=${network} facilitator=${this.name} status=${status ?? "error"}:`,
+        err instanceof Error ? err.message : err,
+      );
+      throw err;
+    }
   }
 
   async getSupported() {
@@ -147,8 +184,7 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
       }
       if (this.mode === "cdp-synthesize-base") {
         console.warn(
-          `[facilitator] ${this.name} getSupported returned no Base kinds (warn-only); ` +
-            `synthesizing eip155:8453 so Base stays registered for verify/settle`,
+          `[facilitator] ${this.name} getSupported empty (warn-only); synthesizing eip155:8453`,
         );
         return syntheticCdpBaseSupported();
       }
@@ -157,8 +193,7 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
       const msg = err instanceof Error ? err.message : String(err);
       if (this.mode === "cdp-synthesize-base") {
         console.warn(
-          `[facilitator] ${this.name} getSupported failed (warn-only); ` +
-            `synthesizing eip155:8453 — Base remains enabled:`,
+          `[facilitator] ${this.name} getSupported failed (warn-only); synthesizing eip155:8453:`,
           msg,
         );
         return syntheticCdpBaseSupported();
@@ -173,7 +208,7 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
 }
 
 /**
- * @deprecated Prefer createFacilitatorClients / buildFacilitators for dual CDP+PayAI.
+ * @deprecated Prefer buildFacilitators.
  */
 export function createFacilitatorClient(
   config: AppConfig,
@@ -198,12 +233,8 @@ function createPayAiClient(
   );
 }
 
-/**
- * CDP client when both API keys are present. Soft-fails to null if construction fails.
- * Keys present ⇒ Base enabled; getSupported never gates registration.
- */
-function createCdpClient(config: AppConfig): {
-  scoped: FacilitatorClient;
+function createCdpScoped(config: AppConfig): {
+  scoped: NetworkScopedFacilitator;
   inner: FacilitatorClient;
 } | null {
   if (!config.cdpConfigured || !config.cdpApiKeyId || !config.cdpApiKeySecret) {
@@ -215,10 +246,10 @@ function createCdpClient(config: AppConfig): {
   const secretMeta = describeCdpSecretMeta(apiKeySecret);
 
   console.log(
-    `[facilitator] CDP client via createCdpFacilitatorClient` +
+    `[facilitator] CDP via createCdpFacilitatorClient` +
       ` secretLen=${secretMeta.length}` +
       ` secretStartsWithBegin=${secretMeta.startsWithBegin}` +
-      ` jwt=${CDP_SUPPORTED_AUTH.method} ${CDP_SUPPORTED_AUTH.host}${CDP_SUPPORTED_AUTH.path}`,
+      ` (Base verify/settle JWT; FACILITATOR_URL stays PayAI-only)`,
   );
 
   try {
@@ -234,7 +265,7 @@ function createCdpClient(config: AppConfig): {
       "cdp-synthesize-base",
     );
     console.log(
-      "[facilitator] CDP enabled for Base (eip155:8453) — getSupported is warn-only",
+      "[facilitator] CDP enabled for Base (eip155:8453) — first in client list (nowcast order)",
     );
     return { scoped, inner };
   } catch (err) {
@@ -247,19 +278,16 @@ function createCdpClient(config: AppConfig): {
 }
 
 /**
- * Build facilitator client list: CDP first (Base) when configured, then PayAI (Solana).
+ * Nowcast order: CDP (Base) first when configured, then PayAI (Solana-scoped if CDP on).
  */
 export function buildFacilitators(config: AppConfig): BuiltFacilitators {
   const payaiUrl = resolvePayAiUrl(config.facilitatorUrl);
-  const cdpPair = createCdpClient(config);
-  const cdp = cdpPair?.scoped ?? null;
-  const cdpInner = cdpPair?.inner ?? null;
-  const cdpEnabled = Boolean(cdp);
-  // PayAI Solana-only when CDP owns Base (nowcast dual-rail).
+  const cdpPair = createCdpScoped(config);
+  const cdpEnabled = Boolean(cdpPair);
   const payai = createPayAiClient(config, cdpEnabled);
 
   const clients: FacilitatorClient[] = [];
-  if (cdp) clients.push(cdp);
+  if (cdpPair) clients.push(cdpPair.scoped);
   clients.push(payai);
 
   if (!cdpEnabled) {
@@ -273,7 +301,14 @@ export function buildFacilitators(config: AppConfig): BuiltFacilitators {
         : " (Solana; Base fallback if NETWORKS includes base)"),
   );
 
-  return { clients, payai, cdp, cdpInner, payaiUrl, cdpEnabled };
+  return {
+    clients,
+    payai,
+    cdp: cdpPair?.scoped ?? null,
+    cdpInner: cdpPair?.inner ?? null,
+    payaiUrl,
+    cdpEnabled,
+  };
 }
 
 export function createFacilitatorClients(
@@ -283,9 +318,8 @@ export function createFacilitatorClients(
 }
 
 /**
- * Probe each rail's getSupported independently. NEVER throws.
- * CDP probe is warn-only on the raw client: never disables Base / never sets enabled=false.
- * Scoped CDP client (used at initialize) synthesizes Base kinds if this probe 401s.
+ * Probe rails independently. NEVER throws.
+ * CDP probe is warn-only; never disables Base.
  */
 export async function probeFacilitatorSupport(
   built: BuiltFacilitators,
@@ -316,14 +350,12 @@ export async function probeFacilitatorSupport(
     );
     try {
       const supported = await built.cdpInner.getSupported();
-      const n = (supported.kinds ?? []).filter((k) =>
-        (CDP_BASE_NETWORKS as readonly string[]).includes(k.network),
+      const n = (supported.kinds ?? []).filter(
+        (k) => k.network === "eip155:8453",
       ).length;
       if (n > 0) {
         cdpLastProbe = "200";
-        console.log(
-          `[facilitator] CDP probe 200 kinds=${n} (Base enabled)`,
-        );
+        console.log(`[facilitator] CDP probe 200 kinds=${n} (Base enabled)`);
       } else {
         cdpLastProbe = "401";
         errors.push(
@@ -335,7 +367,7 @@ export async function probeFacilitatorSupport(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      cdpLastProbe = /401|unauthorized/i.test(msg) ? "401" : "401";
+      cdpLastProbe = "401";
       errors.push(`CDP getSupported: ${msg}`);
       console.warn(
         "[facilitator] CDP probe 401 (warn-only) — Base stays enabled for verify/settle:",
@@ -358,9 +390,6 @@ export async function probeFacilitatorSupport(
   };
 }
 
-/**
- * Warm resource server kind catalog. Soft-fails: never throws to the caller.
- */
 export async function warmResourceServer(
   resourceServer: { initialize: () => Promise<void> } | null | undefined,
 ): Promise<{ ok: boolean; error?: string }> {

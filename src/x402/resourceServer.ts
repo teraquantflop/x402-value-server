@@ -7,8 +7,9 @@ import type { AppConfig } from "../types.js";
 import { isEvmNetworkId, isSvmNetworkId } from "../config.js";
 
 /**
- * Build an x402 resource server with one or more facilitators.
- * - Earlier facilitators win network kinds (CDP before PayAI → Base on CDP).
+ * Build an x402 resource server with facilitator client(s).
+ * Nowcast order when CDP configured: [CDP_scoped(eip155:8453), PayAI_solana_scoped].
+ * initialize() maps Base → CDP (earlier wins); PayAI is Solana-only so Base never hits PayAI.
  * - EVM (Base): ExactEvmScheme (USDC 0x8335… + EIP-712 name/version on Base)
  * - SVM (Solana): ExactSvmScheme
  */

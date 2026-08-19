@@ -548,7 +548,7 @@ CDP_API_KEY_SECRET=...
 # CDP_WALLET_SECRET=   # optional; unused when payTo is an EOA
 ```
 
-Boot probes PayAI `getSupported` (no auth). CDP `getSupported` is **warn-only**: a 401 never drops Base — keys present ⇒ `eip155:8453` stays in 402 accepts and verify/settle use CDP (nowcast semantics).
+When CDP keys are set, facilitators are registered **CDP first** (scoped to `eip155:8453` via `createCdpFacilitatorClient`), then **PayAI** (Solana-only) — same order as pjm-nowcast. Base verify/settle use CDP JWT; Base never hits PayAI. CDP `getSupported` is **warn-only** (401 never drops Base).
 
 `GET /health` reports `facilitators: { payai, cdp: { enabled, lastProbe }, base, solana }` (names only, never secrets). `cdp.enabled` stays true when keys are set even if `lastProbe` is `401`.
 

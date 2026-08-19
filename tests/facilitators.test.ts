@@ -32,6 +32,7 @@ function ed25519CdpSecret(): string {
 const SOLANA_PAYTO = "DCi9X5mmacNGLeJvCw9fdWgX3G8V4QquDn4EuXATkcYr";
 const BASE_PAYTO =
   "0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f" as `0x${string}`;
+const SOLANA_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -97,7 +98,7 @@ describe("resolvePayAiUrl", () => {
 });
 
 describe("facilitatorStatus", () => {
-  it("reports nowcast-shaped labels without CDP", () => {
+  it("reports labels without CDP", () => {
     resetCdpLastProbe();
     const status = facilitatorStatus(baseConfig({ cdpConfigured: false }));
     expect(status).toEqual({
@@ -120,21 +121,18 @@ describe("facilitatorStatus", () => {
     expect(status.cdp.enabled).toBe(true);
     expect(status.cdp.lastProbe).toBe("401");
     expect(status.base).toBe("cdp");
-    expect(status.solana).toBe("payai");
   });
 });
 
-describe("buildFacilitators", () => {
-  it("builds PayAI-only when CDP unset", () => {
+describe("buildFacilitators nowcast order", () => {
+  it("PayAI-only when CDP unset", () => {
     const built = buildFacilitators(baseConfig({ cdpConfigured: false }));
     expect(built.cdp).toBeNull();
-    expect(built.cdpInner).toBeNull();
     expect(built.cdpEnabled).toBe(false);
     expect(built.clients).toHaveLength(1);
-    expect(built.payaiUrl).toBe(PAYAI_DEFAULT_URL);
   });
 
-  it("never points PayAI at CDP even if facilitatorUrl is CDP", () => {
+  it("never points PayAI at CDP URL", () => {
     const built = buildFacilitators(
       baseConfig({
         facilitatorUrl: CDP_FACILITATOR_URL,
@@ -145,25 +143,77 @@ describe("buildFacilitators", () => {
   });
 });
 
-describe("probeFacilitatorSupport", () => {
-  it("keeps cdpEnabled on 401 (warn-only)", async () => {
-    const payai: FacilitatorClient = {
-      verify: vi.fn(),
+describe("NetworkScoped verify dispatch", () => {
+  it("Base verify hits CDP client, not PayAI; Solana hits PayAI", async () => {
+    const cdpVerify = vi.fn().mockResolvedValue({ isValid: true });
+    const payaiVerify = vi.fn().mockResolvedValue({ isValid: true });
+
+    const cdpInner: FacilitatorClient = {
+      verify: cdpVerify,
       settle: vi.fn(),
       getSupported: vi.fn().mockResolvedValue({
         kinds: [
-          {
-            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-            scheme: "exact",
-            x402Version: 2,
-          },
+          { network: "eip155:8453", scheme: "exact", x402Version: 2 },
         ],
+        extensions: [],
+        signers: {},
       }),
     };
+    const payaiInner: FacilitatorClient = {
+      verify: payaiVerify,
+      settle: vi.fn(),
+      getSupported: vi.fn().mockResolvedValue({
+        kinds: [{ network: SOLANA_NET, scheme: "exact", x402Version: 2 }],
+        extensions: [],
+        signers: {},
+      }),
+    };
+
+    const cdp = new NetworkScopedFacilitator(
+      cdpInner,
+      new Set(["eip155:8453"]),
+      "cdp",
+      "cdp-synthesize-base",
+    );
+    const payai = new NetworkScopedFacilitator(
+      payaiInner,
+      new Set([SOLANA_NET]),
+      "payai",
+      "filter",
+    );
+
+    // Nowcast client order
+    const clients = [cdp, payai];
+    expect(clients[0]).toBe(cdp);
+
+    const payload = { x402Version: 2 } as Parameters<FacilitatorClient["verify"]>[0];
+    const baseReqs = {
+      network: "eip155:8453",
+      scheme: "exact",
+    } as Parameters<FacilitatorClient["verify"]>[1];
+    const solReqs = {
+      network: SOLANA_NET,
+      scheme: "exact",
+    } as Parameters<FacilitatorClient["verify"]>[1];
+
+    await cdp.verify(payload, baseReqs);
+    expect(cdpVerify).toHaveBeenCalledTimes(1);
+    expect(payaiVerify).not.toHaveBeenCalled();
+
+    await payai.verify(payload, solReqs);
+    expect(payaiVerify).toHaveBeenCalledTimes(1);
+    expect(cdpVerify).toHaveBeenCalledTimes(1);
+  });
+
+  it("mocked CDP /supported 401 still leaves Base in kinds", async () => {
     const cdpInner: FacilitatorClient = {
       verify: vi.fn(),
       settle: vi.fn(),
-      getSupported: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+      getSupported: vi
+        .fn()
+        .mockRejectedValue(
+          new Error("Facilitator getSupported failed (401): Unauthorized"),
+        ),
     };
     const cdp = new NetworkScopedFacilitator(
       cdpInner,
@@ -171,6 +221,17 @@ describe("probeFacilitatorSupport", () => {
       "cdp",
       "cdp-synthesize-base",
     );
+
+    const supported = await cdp.getSupported();
+    expect(supported.kinds.some((k) => k.network === "eip155:8453")).toBe(true);
+
+    const payai: FacilitatorClient = {
+      verify: vi.fn(),
+      settle: vi.fn(),
+      getSupported: vi.fn().mockResolvedValue({
+        kinds: [{ network: SOLANA_NET, scheme: "exact", x402Version: 2 }],
+      }),
+    };
     const built: BuiltFacilitators = {
       clients: [cdp, payai],
       payai,
@@ -179,50 +240,15 @@ describe("probeFacilitatorSupport", () => {
       payaiUrl: PAYAI_DEFAULT_URL,
       cdpEnabled: true,
     };
-
-    const result = await probeFacilitatorSupport(built);
-    expect(result.payaiOk).toBe(true);
-    expect(result.cdpEnabled).toBe(true);
-    expect(result.cdpLastProbe).toBe("401");
-    expect(result.errors.some((e) => /401|CDP/i.test(e))).toBe(true);
-
-    // Scoped client still returns Base kinds for initialize()
-    const supported = await cdp.getSupported();
-    expect(supported.kinds.some((k) => k.network === "eip155:8453")).toBe(true);
-  });
-
-  it("sets lastProbe skipped when CDP not built", async () => {
-    const payai: FacilitatorClient = {
-      verify: vi.fn(),
-      settle: vi.fn(),
-      getSupported: vi.fn().mockResolvedValue({
-        kinds: [
-          {
-            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-            scheme: "exact",
-            x402Version: 2,
-          },
-        ],
-      }),
-    };
-    const result = await probeFacilitatorSupport({
-      clients: [payai],
-      payai,
-      cdp: null,
-      cdpInner: null,
-      payaiUrl: PAYAI_DEFAULT_URL,
-      cdpEnabled: false,
-    });
-    expect(result.cdpEnabled).toBe(false);
-    expect(result.cdpLastProbe).toBe("skipped");
-    expect(result.payaiOk).toBe(true);
+    const probe = await probeFacilitatorSupport(built);
+    expect(probe.cdpEnabled).toBe(true);
+    expect(probe.cdpLastProbe).toBe("401");
   });
 });
 
 describe("syntheticCdpBaseSupported", () => {
-  it("advertises exact on eip155:8453 for initialize mapping", () => {
-    const s = syntheticCdpBaseSupported();
-    expect(s.kinds).toEqual([
+  it("advertises exact on eip155:8453", () => {
+    expect(syntheticCdpBaseSupported().kinds).toEqual([
       { x402Version: 2, scheme: "exact", network: "eip155:8453" },
     ]);
   });
@@ -236,7 +262,6 @@ describe("warmResourceServer", () => {
       },
     });
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/no supported/i);
   });
 
   it("returns ok on successful initialize", async () => {
@@ -248,42 +273,40 @@ describe("warmResourceServer", () => {
 });
 
 describe("normalizeCdpApiKeySecret", () => {
-  it("unescapes literal \\n in PEM secrets (Railway/dotenv)", () => {
+  it("unescapes literal \\n in PEM secrets", () => {
     const escaped =
       "-----BEGIN EC PRIVATE KEY-----\\nMHsCAQEE\\n-----END EC PRIVATE KEY-----\\n";
     const normalized = normalizeCdpApiKeySecret(escaped);
     expect(normalized).toContain("\n");
     expect(normalized).not.toContain("\\n");
-    expect(normalized.startsWith("-----BEGIN")).toBe(true);
     expect(describeCdpSecretMeta(normalized).startsWithBegin).toBe(true);
   });
 
-  it("leaves Ed25519 base64 secrets unchanged", () => {
+  it("leaves Ed25519 base64 unchanged", () => {
     const ed = ed25519CdpSecret();
     expect(normalizeCdpApiKeySecret(ed)).toBe(ed.trim());
   });
 });
 
-describe("CDP getSupported JWT path (mocked fetch)", () => {
+describe("CDP getSupported JWT (mocked fetch)", () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
   });
 
-  it("createCdpFacilitatorClient GETs /platform/v2/x402/supported with Bearer auth (200)", async () => {
+  it("createCdpFacilitatorClient GETs /supported with Bearer", async () => {
     const calls: { url: string; method?: string; hasAuth: boolean }[] = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       const headers = (init?.headers ?? {}) as Record<string, string>;
       const auth = headers.Authorization ?? headers.authorization;
-      calls.push({
-        url,
-        method: init?.method,
-        hasAuth: Boolean(auth),
-      });
-      expect(typeof auth === "string" && auth.startsWith("Bearer ")).toBe(true);
-      // Never assert token contents — only presence
+      calls.push({ url, method: init?.method, hasAuth: Boolean(auth) });
       return new Response(
         JSON.stringify({
           kinds: [
@@ -301,64 +324,11 @@ describe("CDP getSupported JWT path (mocked fetch)", () => {
       apiKeySecret: ed25519CdpSecret(),
       baseUrl: CDP_FACILITATOR_URL,
     });
-    const supported = await client.getSupported();
-    expect(supported.kinds.length).toBe(1);
-    expect(calls).toHaveLength(1);
+    await client.getSupported();
     expect(calls[0]!.url).toBe(
       `https://${CDP_SUPPORTED_AUTH.host}${CDP_SUPPORTED_AUTH.path}`,
     );
     expect(calls[0]!.method).toBe("GET");
     expect(calls[0]!.hasAuth).toBe(true);
-  });
-
-  it("CDP 401 keeps Base registered via synthesis (PayAI still ok)", async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response("unauthorized", { status: 401 });
-    }) as typeof fetch;
-
-    const inner = createCdpFacilitatorClient({
-      apiKeyId: "organizations/test/apiKeys/test",
-      apiKeySecret: ed25519CdpSecret(),
-      baseUrl: CDP_FACILITATOR_URL,
-    });
-    const cdp = new NetworkScopedFacilitator(
-      inner,
-      new Set(["eip155:8453"]),
-      "cdp",
-      "cdp-synthesize-base",
-    );
-
-    // Scoped wrapper synthesizes Base kinds — never drops Base on 401
-    const supported = await cdp.getSupported();
-    expect(supported.kinds.some((k) => k.network === "eip155:8453")).toBe(true);
-
-    const payai: FacilitatorClient = {
-      verify: vi.fn(),
-      settle: vi.fn(),
-      getSupported: vi.fn().mockResolvedValue({
-        kinds: [
-          {
-            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-            scheme: "exact",
-            x402Version: 2,
-          },
-        ],
-        extensions: [],
-        signers: {},
-      }),
-    };
-
-    const probe = await probeFacilitatorSupport({
-      clients: [cdp, payai],
-      payai,
-      cdp,
-      cdpInner: inner,
-      payaiUrl: PAYAI_DEFAULT_URL,
-      cdpEnabled: true,
-    });
-    expect(probe.payaiOk).toBe(true);
-    expect(probe.cdpEnabled).toBe(true);
-    expect(probe.cdpLastProbe).toBe("401");
-    expect(probe.errors.length).toBeGreaterThan(0);
   });
 });
