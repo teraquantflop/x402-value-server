@@ -29,6 +29,40 @@ describe("MCP Streamable HTTP smoke", () => {
     expect(res.status).toBe(405);
   });
 
+  it("POST /mcp without dual Accept returns 406 JSON-RPC hint", async () => {
+    if (!config.mcpEnabled) return;
+    const res = await fetch(`${baseUrl}${config.mcpPath}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "test", version: "1.0.0" },
+        },
+      }),
+    });
+    expect(res.status).toBe(406);
+    const body = (await res.json()) as {
+      jsonrpc: string;
+      error: { code: number; message: string; data?: { hint?: string; path?: string; docs?: string } };
+      id: null;
+    };
+    expect(body.jsonrpc).toBe("2.0");
+    expect(body.id).toBeNull();
+    expect(body.error.code).toBe(-32000);
+    expect(body.error.message).toMatch(/Not Acceptable/i);
+    expect(body.error.data?.hint).toMatch(/Retry initialize/i);
+    expect(body.error.data?.path).toBe(config.mcpPath);
+    expect(body.error.data?.docs).toContain("/llms.txt");
+  });
+
   it("POST /mcp is mounted and responds (JSON-RPC envelope)", async () => {
     if (!config.mcpEnabled) return;
 
