@@ -112,6 +112,11 @@ export interface AppConfig {
   /** Streamable HTTP MCP façade */
   mcpEnabled: boolean;
   mcpPath: string;
+  /**
+   * When set, HTTP paid routes skip x402 if header OptionBookClient matches
+   * (timing-safe). Undefined/empty disables.
+   */
+  optionBookId?: string;
   serviceName: string;
   serviceVersion: string;
 }

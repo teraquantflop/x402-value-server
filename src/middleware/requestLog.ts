@@ -49,7 +49,9 @@ export function requestLogMiddleware(
           : "",
       );
     } else {
-      console.log(`[http] ${req.method} ${req.path} → ${status} ${ms}ms`);
+      const ob =
+        res.locals.optionBookClient === true ? " optionbook_client=yes" : "";
+      console.log(`[http] ${req.method} ${req.path} → ${status} ${ms}ms${ob}`);
     }
 
     return originalJson(body);

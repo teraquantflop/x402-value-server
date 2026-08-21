@@ -75,16 +75,18 @@ export function freeTierMiddleware(config: AppConfig) {
 }
 
 /**
- * Skip x402 payment when free tier was granted for this request.
- * Must run after freeTierMiddleware and before (or instead of) paymentMiddleware
- * for the option price path only — implemented as a wrapper that calls next()
- * without invoking payment when granted.
+ * Skip x402 payment when free tier was granted, or when OptionBookClient matched.
+ * Wrapper calls next() without invoking payment when exempt.
  */
 export function skipPaymentIfFreeTier(
   paymentMw: (req: Request, res: Response, next: NextFunction) => void,
 ) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (res.locals.freeTierGranted === true) {
+      next();
+      return;
+    }
+    if (res.locals.optionBookClient === true) {
       next();
       return;
     }

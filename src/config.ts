@@ -170,6 +170,14 @@ const envSchema = z.object({
       const p = v.trim() || "/mcp";
       return p.startsWith("/") ? p : `/${p}`;
     }),
+  /** Optional; when set, OptionBookClient header may skip x402 on paid HTTP routes. */
+  OPTIONBOOK_ID: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const t = (v ?? "").trim();
+      return t.length > 0 ? t : undefined;
+    }),
 });
 
 function parseNetworks(raw: string): NetworkAlias[] {
@@ -344,6 +352,7 @@ function loadConfig(): AppConfig {
     freeTierWindowMs: env.FREE_TIER_WINDOW_MS,
     mcpEnabled: env.MCP_ENABLED !== false,
     mcpPath: env.MCP_PATH,
+    optionBookId: env.OPTIONBOOK_ID,
     serviceName: "x402-derivatives-desk",
     serviceVersion: "1.6.0",
   };

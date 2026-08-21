@@ -14,6 +14,7 @@ import {
   freeTierMiddleware,
   skipPaymentIfFreeTier,
 } from "./middleware/freeTier.js";
+import { optionBookClientMiddleware } from "./middleware/optionBookClient.js";
 import {
   deferredJsonParser,
   rejectStashedJsonError,
@@ -94,6 +95,8 @@ export function createApp(): Express {
 
   // Optional first-N free on /v1/option/price (before payment gate)
   app.use(freeTierMiddleware(config));
+  // Optional OptionBookClient header skip (when OPTIONBOOK_ID is set)
+  app.use(optionBookClientMiddleware(config));
 
   // Idempotency for paid handlers
   const idempotencyStore = new MemoryIdempotencyStore(config.idempotencyTtlMs);
@@ -116,6 +119,7 @@ export function createApp(): Express {
     });
     const payMw = paymentMiddleware(paidRoutes, resourceServer);
     // Payment first: unpaid → 402 before Zod / stashed JSON errors
+    // (skipped when free-tier or OptionBookClient matched)
     app.use(skipPaymentIfFreeTier(payMw));
   }
 
