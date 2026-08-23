@@ -34,6 +34,9 @@ export function createResourceServer(
     if (networkId === "eip155:8453") {
       // Base mainnet ↔ CDP only (never register Base scheme without CDP client)
       server.register(networkId, new ExactEvmScheme());
+    } else if (networkId === "eip155:137") {
+      // Polygon mainnet ↔ PayAI Exact EVM (Circle USDC via @x402/evm defaults)
+      server.register(networkId, new ExactEvmScheme());
     } else if (isSvmNetworkId(networkId)) {
       server.register(networkId, new ExactSvmScheme());
     } else if (isEvmNetworkId(networkId)) {

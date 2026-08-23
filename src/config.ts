@@ -12,6 +12,7 @@ import { getCdpLastProbe } from "./x402/cdpProbeState.js";
 export const NETWORK_MAP: Record<NetworkAlias, NetworkId> = {
   "base-sepolia": "eip155:84532",
   base: "eip155:8453",
+  polygon: "eip155:137",
   /** Solana mainnet-beta */
   solana: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   "solana-devnet": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -20,6 +21,7 @@ export const NETWORK_MAP: Record<NetworkAlias, NetworkId> = {
 export const NETWORK_FAMILY: Record<NetworkAlias, ChainFamily> = {
   "base-sepolia": "evm",
   base: "evm",
+  polygon: "evm",
   solana: "svm",
   "solana-devnet": "svm",
 };
@@ -31,6 +33,11 @@ const NETWORK_ALIASES: Record<string, NetworkAlias> = {
   base: "base",
   "base-mainnet": "base",
   basemainnet: "base",
+  polygon: "polygon",
+  "polygon-mainnet": "polygon",
+  polygonmainnet: "polygon",
+  matic: "polygon",
+  "eip155:137": "polygon",
   solana: "solana",
   "solana-mainnet": "solana",
   solanamainnet: "solana",
@@ -67,8 +74,10 @@ const envSchema = z.object({
   PAY_TO_ADDRESS: z.string().min(1).default(
     "0x0000000000000000000000000000000000000001",
   ),
-  /** Optional explicit EVM receiver when multi-chain. */
+  /** Base (eip155:8453) receiver only — never use for Polygon. */
   PAY_TO_EVM_ADDRESS: z.string().optional(),
+  /** Polygon mainnet (eip155:137) receiver only — never alias of PAY_TO_EVM_ADDRESS. */
+  POLY_PAY_TO: z.string().optional(),
   /** Optional explicit Solana receiver when multi-chain. */
   PAY_TO_SVM_ADDRESS: z.string().optional(),
   PRICE_USD: z.coerce
@@ -195,7 +204,7 @@ function parseNetworks(raw: string): NetworkAlias[] {
     const alias = NETWORK_ALIASES[p];
     if (!alias) {
       throw new Error(
-        `Unknown network "${p}". Supported: base-sepolia, base, solana, solana-devnet`,
+        `Unknown network "${p}". Supported: base-sepolia, base, polygon, solana, solana-devnet`,
       );
     }
     if (!aliases.includes(alias)) {
@@ -213,12 +222,21 @@ function formatPriceDollar(priceUsd: number): string {
 function resolvePayTos(
   env: z.infer<typeof envSchema>,
   networks: NetworkAlias[],
-): { payToEvm?: `0x${string}`; payToSvm?: string; payToAddress: string } {
+): {
+  payToEvm?: `0x${string}`;
+  payToPolygon?: `0x${string}`;
+  payToSvm?: string;
+  payToAddress: string;
+} {
   const primary = env.PAY_TO_ADDRESS.trim();
-  const needsEvm = networks.some((n) => NETWORK_FAMILY[n] === "evm");
+  const needsBaseFamily = networks.some(
+    (n) => n === "base" || n === "base-sepolia",
+  );
+  const needsPolygon = networks.includes("polygon");
   const needsSvm = networks.some((n) => NETWORK_FAMILY[n] === "svm");
 
   let payToEvm: `0x${string}` | undefined;
+  let payToPolygon: `0x${string}` | undefined;
   let payToSvm: string | undefined;
 
   if (env.PAY_TO_EVM_ADDRESS) {
@@ -227,8 +245,16 @@ function resolvePayTos(
       throw new Error("PAY_TO_EVM_ADDRESS must be a valid EVM 0x address");
     }
     payToEvm = v;
-  } else if (isEvmAddress(primary)) {
+  } else if (isEvmAddress(primary) && needsBaseFamily) {
     payToEvm = primary;
+  }
+
+  if (env.POLY_PAY_TO) {
+    const v = env.POLY_PAY_TO.trim();
+    if (!isEvmAddress(v)) {
+      throw new Error("POLY_PAY_TO must be a valid EVM 0x address");
+    }
+    payToPolygon = v;
   }
 
   if (env.PAY_TO_SVM_ADDRESS) {
@@ -241,9 +267,14 @@ function resolvePayTos(
     payToSvm = primary;
   }
 
-  if (needsEvm && !payToEvm) {
+  if (needsBaseFamily && !payToEvm) {
     throw new Error(
-      "EVM network(s) enabled but no EVM receiver: set PAY_TO_ADDRESS to a 0x address or set PAY_TO_EVM_ADDRESS",
+      "Base network(s) enabled but no Base receiver: set PAY_TO_EVM_ADDRESS (Base only; not POLY_PAY_TO)",
+    );
+  }
+  if (needsPolygon && !payToPolygon) {
+    throw new Error(
+      "Polygon enabled but POLY_PAY_TO is unset: set POLY_PAY_TO to a 0x address (Polygon only; not PAY_TO_EVM_ADDRESS)",
     );
   }
   if (needsSvm && !payToSvm) {
@@ -259,7 +290,7 @@ function resolvePayTos(
     );
   }
 
-  return { payToEvm, payToSvm, payToAddress: primary };
+  return { payToEvm, payToPolygon, payToSvm, payToAddress: primary };
 }
 
 function loadConfig(): AppConfig {
@@ -274,7 +305,10 @@ function loadConfig(): AppConfig {
   const env = parsed.data;
   const networks = parseNetworks(env.NETWORKS);
   const networkIds = networks.map((n) => NETWORK_MAP[n]);
-  const { payToEvm, payToSvm, payToAddress } = resolvePayTos(env, networks);
+  const { payToEvm, payToPolygon, payToSvm, payToAddress } = resolvePayTos(
+    env,
+    networks,
+  );
 
   const corsOrigin =
     env.CORS_ORIGIN === "*"
@@ -305,6 +339,7 @@ function loadConfig(): AppConfig {
     nodeEnv: env.NODE_ENV,
     payToAddress,
     payToEvm,
+    payToPolygon,
     payToSvm,
     priceUsd: env.PRICE_USD,
     priceDollarString: formatPriceDollar(env.PRICE_USD),
@@ -363,6 +398,7 @@ export function facilitatorStatus(
   config: AppConfig,
 ): import("./types.js").FacilitatorStatus {
   const hasBase = config.networks.includes("base");
+  const hasPolygon = config.networks.includes("polygon");
   const hasSolana =
     config.networks.includes("solana") ||
     config.networks.includes("solana-devnet");
@@ -376,6 +412,7 @@ export function facilitatorStatus(
     },
     // Base mainnet is CDP-only — never report PayAI as the Base rail
     base: hasBase ? (enabled ? "cdp" : "none") : "none",
+    polygon: hasPolygon && config.payToPolygon ? "payai" : "none",
     solana: hasSolana ? "payai" : "none",
   };
 }
@@ -390,9 +427,17 @@ export function payToForNetwork(config: AppConfig, networkId: string): string {
     }
     return config.payToSvm;
   }
+  if (networkId === "eip155:137") {
+    if (!config.payToPolygon) {
+      throw new Error(`No Polygon payTo (POLY_PAY_TO) configured for ${networkId}`);
+    }
+    return config.payToPolygon;
+  }
   if (isEvmNetworkId(networkId)) {
     if (!config.payToEvm) {
-      throw new Error(`No EVM payTo configured for network ${networkId}`);
+      throw new Error(
+        `No Base/EVM payTo (PAY_TO_EVM_ADDRESS) configured for network ${networkId}`,
+      );
     }
     return config.payToEvm;
   }

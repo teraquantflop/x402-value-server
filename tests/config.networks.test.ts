@@ -44,6 +44,10 @@ describe("network map", () => {
     expect(NETWORK_MAP.base).toBe("eip155:8453");
   });
 
+  it("maps polygon alias to Polygon mainnet CAIP-2", () => {
+    expect(NETWORK_MAP.polygon).toBe("eip155:137");
+  });
+
   it("maps solana-devnet alias", () => {
     expect(NETWORK_MAP["solana-devnet"]).toBe(
       "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -54,6 +58,7 @@ describe("network map", () => {
     expect(isSvmNetworkId(NETWORK_MAP.solana)).toBe(true);
     expect(isSvmNetworkId(NETWORK_MAP.base)).toBe(false);
     expect(isEvmNetworkId(NETWORK_MAP.base)).toBe(true);
+    expect(isEvmNetworkId(NETWORK_MAP.polygon)).toBe(true);
     expect(isEvmNetworkId(NETWORK_MAP.solana)).toBe(false);
   });
 });

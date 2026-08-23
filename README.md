@@ -67,11 +67,12 @@ Edit `.env`:
 | Variable | Notes |
 |----------|--------|
 | `PAY_TO_ADDRESS` | Primary receiving wallet: EVM `0x…` **or** Solana base58 (public only) |
-| `PAY_TO_EVM_ADDRESS` | Base/EVM receiver when dual-chain (e.g. `0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f`) |
-| `PAY_TO_SVM_ADDRESS` | Explicit Solana receiver when dual-chain |
-| `NETWORKS` | Comma-separated: `solana,base` (prod dual) \| `base-sepolia` \| `solana-devnet` \| … |
-| `FACILITATOR_URL` | PayAI only (default `https://facilitator.payai.network`) — never the CDP API URL |
-| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | Base via CDP; both required. Missing/401 → still listen on Solana |
+| `PAY_TO_EVM_ADDRESS` | **Base only** (`eip155:8453`) receiver — never use for Polygon |
+| `POLY_PAY_TO` | **Polygon only** (`eip155:137`) receiver — never alias of `PAY_TO_EVM_ADDRESS` |
+| `PAY_TO_SVM_ADDRESS` | Explicit Solana receiver when multi-chain |
+| `NETWORKS` | Comma-separated: `solana,base,polygon` (prod) \| `base-sepolia` \| `solana-devnet` \| … |
+| `FACILITATOR_URL` | PayAI for Solana + Polygon (default `https://facilitator.payai.network`) — never the CDP API URL |
+| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | Base via CDP; both required. Missing/401 → still listen on Solana/Polygon |
 | `CDP_WALLET_SECRET` | Optional; unused when `PAY_TO_EVM_ADDRESS` is an EOA |
 | `PRICE_USD` | Single option `/v1/option/price` — `0.01`–`1.00` (default `0.05`) |
 | `PRICE_IMPLIED_VOL_USD` | IV solve `/v1/option/implied-vol` — default `0.03` |
@@ -494,12 +495,15 @@ Works for single-option and multi-leg portfolios.
 
 ## Networks & facilitator
 
-| Network | CAIP-2 | Env alias | Scheme package |
-|---------|--------|-----------|----------------|
-| Base Sepolia | `eip155:84532` | `base-sepolia` | `@x402/evm` `ExactEvmScheme` |
-| Base mainnet | `eip155:8453` | `base` | `@x402/evm` `ExactEvmScheme` |
-| Solana mainnet | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `solana` | `@x402/svm` `ExactSvmScheme` |
-| Solana Devnet | `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` | `solana-devnet` | `@x402/svm` `ExactSvmScheme` |
+| Network | CAIP-2 | Env alias | Scheme package | payTo env |
+|---------|--------|-----------|----------------|-----------|
+| Base Sepolia | `eip155:84532` | `base-sepolia` | `@x402/evm` `ExactEvmScheme` | `PAY_TO_EVM_ADDRESS` |
+| Base mainnet | `eip155:8453` | `base` | `@x402/evm` `ExactEvmScheme` | `PAY_TO_EVM_ADDRESS` (**Base only**) |
+| Polygon mainnet | `eip155:137` | `polygon` | `@x402/evm` `ExactEvmScheme` | `POLY_PAY_TO` (**Polygon only**) |
+| Solana mainnet | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `solana` | `@x402/svm` `ExactSvmScheme` | `PAY_TO_ADDRESS` / `PAY_TO_SVM_ADDRESS` |
+| Solana Devnet | `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` | `solana-devnet` | `@x402/svm` `ExactSvmScheme` | `PAY_TO_ADDRESS` / `PAY_TO_SVM_ADDRESS` |
+
+**Important:** `PAY_TO_EVM_ADDRESS` is **Base only**. `POLY_PAY_TO` is **Polygon only**. Never alias one to the other.
 
 ### Public test facilitator
 
@@ -511,27 +515,32 @@ NETWORKS=base-sepolia
 
 Works **without** API keys. **Testnet only** (Base Sepolia + Solana Devnet).
 
-### Solana + Base mainnet (recommended production)
+### Solana + Base + Polygon mainnet (recommended production)
 
-**Dual facilitators (pjm-nowcast parity):**
+**Dual facilitators (pjm-nowcast parity + PayAI Polygon):**
 
 | Chain | Facilitator | Env |
 |-------|-------------|-----|
 | Solana mainnet | **PayAI** | `FACILITATOR_URL=https://facilitator.payai.network` |
-| Base mainnet | **Coinbase CDP** (preferred) | `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` |
-| Base (fallback) | PayAI if CDP unset | — |
+| Polygon mainnet | **PayAI** | same `FACILITATOR_URL` + `POLY_PAY_TO=0x…` |
+| Base mainnet | **Coinbase CDP** | `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` + `PAY_TO_EVM_ADDRESS=0x…` |
 
 ```bash
-NETWORKS=solana,base
+NETWORKS=solana,base,polygon
 PAY_TO_ADDRESS=YourSolanaBase58Address
 PAY_TO_SVM_ADDRESS=YourSolanaBase58Address
-PAY_TO_EVM_ADDRESS=0xYourBaseReceiveAddress
+PAY_TO_EVM_ADDRESS=0xYourBaseReceiveAddress   # Base only
+POLY_PAY_TO=0xYourPolygonReceiveAddress       # Polygon only — required when polygon in NETWORKS
 FACILITATOR_URL=https://facilitator.payai.network
 CDP_API_KEY_ID=...          # Railway secret
 CDP_API_KEY_SECRET=...      # Railway secret
 ```
 
-Same logical prices on both networks (e.g. option `$0.01`, surface `$0.10`). Base 402 accepts use USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` with EIP-712 `extra: { name: "USD Coin", version: "2" }` (via `@x402/evm` ExactEvmScheme).
+Same logical prices on all live networks (e.g. option `$0.01`, surface `$0.10`).
+
+- **Base** 402 accepts: Circle USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, EIP-712 `extra: { name: "USD Coin", version: "2" }`, `payTo` = `PAY_TO_EVM_ADDRESS`
+- **Polygon** 402 accepts: Circle USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359`, same EIP-712 domain shape via `@x402/evm`, `payTo` = `POLY_PAY_TO`
+- **Solana** 402 accepts: USDC mint via `@x402/svm`, `payTo` = Solana receiver
 
 **Wallet hygiene:** receive addresses (`payTo`) appear **only** in HTTP **402** `PAYMENT-REQUIRED`. Free routes (`/health`, `/`, well-known, OpenAPI, llms.txt, demo) never echo wallets.
 
@@ -541,6 +550,7 @@ Single-chain mainnet still works:
 NETWORKS=solana
 PAY_TO_ADDRESS=YourSolanaBase58Address
 # or NETWORKS=base + PAY_TO_EVM_ADDRESS=0x...
+# or NETWORKS=polygon + POLY_PAY_TO=0x...
 ```
 
 ### CDP facilitator (second rail — not `FACILITATOR_URL`)
@@ -548,16 +558,17 @@ PAY_TO_ADDRESS=YourSolanaBase58Address
 Base uses a **separate** CDP-authenticated client (`createCdpFacilitatorClient({ apiKeyId, apiKeySecret })`). Do **not** point `FACILITATOR_URL` at `api.cdp.coinbase.com`, and do **not** send CDP JWTs to PayAI.
 
 ```bash
-NETWORKS=solana,base
-FACILITATOR_URL=https://facilitator.payai.network   # PayAI / Solana
+NETWORKS=solana,base,polygon
+FACILITATOR_URL=https://facilitator.payai.network   # PayAI: Solana + Polygon
+POLY_PAY_TO=0xYourPolygonReceiveAddress
 CDP_API_KEY_ID=...
 CDP_API_KEY_SECRET=...
 # CDP_WALLET_SECRET=   # optional; unused when payTo is an EOA
 ```
 
-When CDP keys are set, facilitators are registered **CDP first** (scoped to `eip155:8453` via `createCdpFacilitatorClient`), then **PayAI** (Solana-only) — same order as pjm-nowcast. Base verify/settle use CDP JWT; Base never hits PayAI. CDP `getSupported` is **warn-only** (401 never drops Base).
+When CDP keys are set, facilitators are registered **CDP first** (scoped to `eip155:8453`), then **PayAI** (Solana + Polygon; never Base) — same order as pjm-nowcast. Base verify/settle use CDP JWT; Base never hits PayAI. CDP `getSupported` is **warn-only** (401 never drops Base).
 
-`GET /health` reports `facilitators: { payai, cdp: { enabled, lastProbe }, base, solana }` (names only, never secrets). `cdp.enabled` stays true when keys are set even if `lastProbe` is `401`.
+`GET /health` reports `facilitators: { payai, cdp: { enabled, lastProbe }, base, polygon, solana }` (names only, never secrets). `cdp.enabled` stays true when keys are set even if `lastProbe` is `401`.
 
 ## Bazaar discovery checklist
 
@@ -569,7 +580,8 @@ Metadata lives in **`src/discovery/catalog.ts`** and is applied in `src/x402/rou
 - [x] `GET /` service card + `GET /llms.txt` English capability summary + price list  
 - [x] Free demo `GET /v1/demo/option-price` for non-wallet 200 samples  
 - [x] OpenAPI free paths with `"security": []`  
-- [x] Dual Solana + Base USDC accepts on paid routes  
+- [x] Multi-network Solana + Base + Polygon USDC accepts on paid routes  
+- [x] Free `/.well-known/agent.json` + `/.well-known/x402-resources`  
 - [x] MCP tools discoverable via service card `mcp` field + `/llms.txt`  
 
 | Layer | What agents get |
@@ -706,9 +718,10 @@ Required / recommended for a Solana mainnet public API:
 |----------|---------|--------|
 | `NODE_ENV` | `production` | |
 | `TRUST_PROXY` | `1` | Railway terminates TLS |
-| `NETWORKS` | `solana,base` | Dual USDC mainnet (or single chain) |
+| `NETWORKS` | `solana,base,polygon` | Multi USDC mainnet (or single chain) |
 | `PAY_TO_ADDRESS` | Solana base58 | **Public only** — primary / SVM receiver |
-| `PAY_TO_EVM_ADDRESS` | `0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f` | Base mainnet receiver |
+| `PAY_TO_EVM_ADDRESS` | `0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f` | **Base only** receiver |
+| `POLY_PAY_TO` | `0x…` Polygon receive address | **Polygon only** — never alias of `PAY_TO_EVM_ADDRESS` |
 | `PAY_TO_SVM_ADDRESS` | same as Solana | Optional explicit SVM receiver |
 | `PRICE_USD` | `0.01` | Between `0.01` and `1.00` |
 | `PRICE_IMPLIED_VOL_USD` | `0.03` | Optional override |
@@ -734,7 +747,11 @@ Then set `PUBLIC_BASE_URL` to that `https://…` URL and redeploy if needed.
 BASE=https://YOUR_APP.up.railway.app
 
 curl -sS $BASE/health | jq .
-# Expect: networks, facilitators.{payai,cdp,base,solana} — NO payTo / receive wallets
+# Expect: networks, facilitators.{payai,cdp,base,polygon,solana} — NO payTo / receive wallets
+
+curl -sS $BASE/.well-known/agent.json | jq .
+curl -sS $BASE/.well-known/x402-resources | jq .
+# Expect: 200 free discovery (no wallets)
 
 curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' $BASE/favicon.ico
 # Expect: 200
@@ -745,8 +762,9 @@ curl -sS $BASE/v1/demo/option-price | jq '.price,.demo'
 curl -sS -D - -o /dev/null -X POST $BASE/v1/option/price \
   -H 'Content-Type: application/json' -d '{}'
 # Expect: 402 + PAYMENT-REQUIRED
-# Decode header (base64 JSON): Base accept has asset 0x8335…, extra.name/version;
-# Solana accept present when NETWORKS includes solana; payTo only here.
+# Decode header (base64 JSON): matching payTo per network —
+#   Solana → PAY_TO_SVM / PAY_TO_ADDRESS; Base → PAY_TO_EVM_ADDRESS (asset 0x8335…);
+#   Polygon → POLY_PAY_TO (asset 0x3c499c… Circle USDC).
 
 # Optional paid: npm run client with funded EVM and/or SVM key
 ```
@@ -765,9 +783,10 @@ docker build -t x402-value-server .
 docker run --rm -p 4021:4021 \
   -e NODE_ENV=production \
   -e TRUST_PROXY=1 \
-  -e NETWORKS=solana,base \
+  -e NETWORKS=solana,base,polygon \
   -e PAY_TO_ADDRESS=YourSolanaBase58Address \
   -e PAY_TO_EVM_ADDRESS=0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f \
+  -e POLY_PAY_TO=0xYourPolygonReceiveAddress \
   -e PRICE_USD=0.01 \
   -e FACILITATOR_URL=https://facilitator.payai.network \
   -e PUBLIC_BASE_URL=http://localhost:4021 \

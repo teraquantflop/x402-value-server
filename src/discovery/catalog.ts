@@ -479,6 +479,16 @@ export function buildServiceCard(config: AppConfig) {
         },
         {
           method: "GET",
+          path: "/.well-known/agent.json",
+          description: "Compact agent discovery card (networks, MCP, links)",
+        },
+        {
+          method: "GET",
+          path: "/.well-known/x402-resources",
+          description: "Paid x402 resources summary (paths, prices, networks)",
+        },
+        {
+          method: "GET",
           path: "/openapi.json",
           description: "OpenAPI 3.1 specification for all endpoints",
         },
@@ -646,6 +656,8 @@ export function buildWellKnownX402(config: AppConfig) {
       serviceCard: `${base}/`,
       health: `${base}/health`,
       wellKnown: `${base}/.well-known/x402.json`,
+      agent: `${base}/.well-known/agent.json`,
+      x402Resources: `${base}/.well-known/x402-resources`,
       openapi: `${base}/openapi.json`,
       swagger: `${base}/swagger.json`,
       llmsTxt: `${base}/llms.txt`,
@@ -661,5 +673,49 @@ export function buildWellKnownX402(config: AppConfig) {
       paymentHeader: "PAYMENT-REQUIRED",
       note: "Unpaid requests to resources return HTTP 402. Payment terms are in the PAYMENT-REQUIRED header (base64 JSON).",
     },
+  };
+}
+
+/** Compact agent card — no wallets. */
+export function buildWellKnownAgent(config: AppConfig) {
+  const card = buildServiceCard(config);
+  const base = config.publicBaseUrl.replace(/\/$/, "");
+  return {
+    name: card.productName,
+    description: card.tagline,
+    url: base,
+    version: card.version,
+    protocol: "x402",
+    networks: card.settlement.networks,
+    facilitators: card.settlement.facilitators,
+    mcp: card.mcp,
+    links: {
+      openapi: `${base}/openapi.json`,
+      llmsTxt: `${base}/llms.txt`,
+      skillMd: `${base}/skill.md`,
+      x402: `${base}/.well-known/x402.json`,
+      resources: `${base}/.well-known/x402-resources`,
+      health: `${base}/health`,
+    },
+  };
+}
+
+/** Paid resources index — paths/prices/networks; no payTo on free discovery. */
+export function buildWellKnownX402Resources(config: AppConfig) {
+  const card = buildServiceCard(config);
+  return {
+    protocol: "x402",
+    scheme: "exact",
+    asset: "USDC",
+    networks: card.settlement.networks,
+    facilitators: card.settlement.facilitators,
+    resources: card.endpoints.paid.map((ep) => ({
+      method: ep.method,
+      path: ep.path,
+      price: ep.price,
+      serviceName: ep.serviceName,
+      description: ep.description,
+    })),
+    note: "payTo appears only in HTTP 402 PAYMENT-REQUIRED accepts[] (Solana → SVM payTo, Base → PAY_TO_EVM_ADDRESS, Polygon → POLY_PAY_TO).",
   };
 }

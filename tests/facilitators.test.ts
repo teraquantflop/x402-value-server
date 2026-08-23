@@ -7,15 +7,18 @@ import {
   CDP_SUPPORTED_AUTH,
   NetworkScopedFacilitator,
   PAYAI_DEFAULT_URL,
+  PAYAI_POLYGON_NETWORK,
   buildFacilitators,
   describeCdpSecretMeta,
   normalizeCdpApiKeySecret,
+  payAiScopedNetworks,
   probeFacilitatorSupport,
   resolvePayAiUrl,
   syntheticCdpBaseSupported,
   warmResourceServer,
   type BuiltFacilitators,
 } from "../src/x402/facilitator.js";
+import { settlementNetworkIds } from "../src/x402/settlementNetworks.js";
 import { resetCdpLastProbe, setCdpLastProbe } from "../src/x402/cdpProbeState.js";
 import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import type { FacilitatorClient } from "@x402/core/server";
@@ -105,8 +108,24 @@ describe("facilitatorStatus", () => {
       payai: true,
       cdp: { enabled: false, lastProbe: "skipped" },
       base: "none",
+      polygon: "none",
       solana: "payai",
     });
+  });
+
+  it("reports polygon=payai when POLY_PAY_TO configured", () => {
+    resetCdpLastProbe();
+    const status = facilitatorStatus(
+      baseConfig({
+        networks: ["solana", "polygon"],
+        networkIds: [NETWORK_MAP.solana, NETWORK_MAP.polygon],
+        payToPolygon: "0x2222222222222222222222222222222222222222",
+        cdpConfigured: false,
+      }),
+    );
+    expect(status.polygon).toBe("payai");
+    expect(status.solana).toBe("payai");
+    expect(status.base).toBe("none");
   });
 
   it("keeps cdp.enabled true when lastProbe is 401", () => {
@@ -140,6 +159,54 @@ describe("buildFacilitators nowcast order", () => {
       }),
     );
     expect(built.payaiUrl).toBe(PAYAI_DEFAULT_URL);
+  });
+});
+
+describe("PayAI Polygon scope + settlement", () => {
+  it("payAiScopedNetworks includes eip155:137 when POLY_PAY_TO set (never Base)", () => {
+    const nets = payAiScopedNetworks(
+      baseConfig({
+        networks: ["solana", "base", "polygon"],
+        networkIds: [
+          NETWORK_MAP.solana,
+          NETWORK_MAP.base,
+          NETWORK_MAP.polygon,
+        ],
+        payToPolygon: "0xcccccccccccccccccccccccccccccccccccccccc",
+        cdpConfigured: true,
+      }),
+    );
+    expect(nets.has(PAYAI_POLYGON_NETWORK)).toBe(true);
+    expect(nets.has(SOLANA_NET)).toBe(true);
+    expect(nets.has("eip155:8453")).toBe(false);
+  });
+
+  it("settlementNetworkIds includes Polygon when payToPolygon set", () => {
+    const ids = settlementNetworkIds(
+      baseConfig({
+        networks: ["solana", "polygon"],
+        networkIds: [NETWORK_MAP.solana, NETWORK_MAP.polygon],
+        payToPolygon: "0xcccccccccccccccccccccccccccccccccccccccc",
+        cdpConfigured: false,
+      }),
+      false,
+    );
+    expect(ids).toContain(NETWORK_MAP.solana);
+    expect(ids).toContain(NETWORK_MAP.polygon);
+    expect(ids).not.toContain(NETWORK_MAP.base);
+  });
+
+  it("omits Polygon from settlement when POLY_PAY_TO unset", () => {
+    const ids = settlementNetworkIds(
+      baseConfig({
+        networks: ["solana", "polygon"],
+        networkIds: [NETWORK_MAP.solana, NETWORK_MAP.polygon],
+        payToPolygon: undefined,
+      }),
+      false,
+    );
+    expect(ids).toContain(NETWORK_MAP.solana);
+    expect(ids).not.toContain(NETWORK_MAP.polygon);
   });
 });
 

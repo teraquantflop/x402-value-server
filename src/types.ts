@@ -2,12 +2,14 @@
 export type NetworkAlias =
   | "base-sepolia"
   | "base"
+  | "polygon"
   | "solana"
   | "solana-devnet";
 
 export type NetworkId =
   | "eip155:84532"
   | "eip155:8453"
+  | "eip155:137"
   | "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
   | "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 
@@ -55,8 +57,10 @@ export interface AppConfig {
   nodeEnv: "development" | "production" | "test";
   /** Primary receiving address from PAY_TO_ADDRESS (EVM or Solana). */
   payToAddress: string;
-  /** EVM receiver when any Base network is enabled. */
+  /** Base (and Base Sepolia) receiver — PAY_TO_EVM_ADDRESS only; never Polygon. */
   payToEvm?: `0x${string}`;
+  /** Polygon mainnet receiver — POLY_PAY_TO only; never alias of payToEvm. */
+  payToPolygon?: `0x${string}`;
   /** Solana receiver when any Solana network is enabled. */
   payToSvm?: string;
   priceUsd: number;
@@ -134,6 +138,8 @@ export interface FacilitatorStatus {
   };
   /** Which facilitator handles Base mainnet accepts (CDP-only; never PayAI) */
   base: "cdp" | "none";
+  /** Which facilitator handles Polygon mainnet accepts (PayAI) */
+  polygon: "payai" | "none";
   /** Which facilitator handles Solana mainnet accepts */
   solana: "payai" | "none";
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { config } from "../src/config.js";
-import { buildWellKnownX402 } from "../src/discovery/catalog.js";
+import {
+  buildWellKnownAgent,
+  buildWellKnownX402,
+  buildWellKnownX402Resources,
+} from "../src/discovery/catalog.js";
 
 describe("buildWellKnownX402", () => {
   it("returns x402 protocol fields and paid resources", () => {
@@ -45,6 +49,27 @@ describe("buildWellKnownX402", () => {
     const base = config.publicBaseUrl.replace(/\/$/, "");
     for (const r of doc.resources) {
       expect(r.url.startsWith(base)).toBe(true);
+    }
+  });
+});
+
+describe("buildWellKnownAgent / x402-resources", () => {
+  it("agent card links to x402 and resources", () => {
+    const agent = buildWellKnownAgent(config);
+    expect(agent.protocol).toBe("x402");
+    expect(agent.links.x402).toContain("/.well-known/x402.json");
+    expect(agent.links.resources).toContain("/.well-known/x402-resources");
+    expect(Array.isArray(agent.networks)).toBe(true);
+  });
+
+  it("resources index lists paid paths without payTo", () => {
+    const doc = buildWellKnownX402Resources(config);
+    expect(doc.protocol).toBe("x402");
+    expect(doc.scheme).toBe("exact");
+    expect(doc.resources.some((r) => r.path === "/v1/option/price")).toBe(true);
+    expect(doc.note).toMatch(/POLY_PAY_TO/);
+    for (const n of doc.networks) {
+      expect((n as { payTo?: string }).payTo).toBeUndefined();
     }
   });
 });

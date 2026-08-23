@@ -94,11 +94,12 @@ function explainStartupError(err: unknown): void {
     console.error(`
 Hint — use TWO facilitators (not one URL):
 
-  Dual mainnet (recommended):
-    NETWORKS=solana,base
-    FACILITATOR_URL=https://facilitator.payai.network
+  Multi mainnet (recommended):
+    NETWORKS=solana,base,polygon
+    FACILITATOR_URL=https://facilitator.payai.network   # Solana + Polygon
     PAY_TO_ADDRESS=<Solana base58>
-    PAY_TO_EVM_ADDRESS=0x…
+    PAY_TO_EVM_ADDRESS=0x…     # Base only
+    POLY_PAY_TO=0x…            # Polygon only (never alias of PAY_TO_EVM_ADDRESS)
     CDP_API_KEY_ID / CDP_API_KEY_SECRET     # Base via CDP only
     # CDP_WALLET_SECRET=                   # optional; unused when payTo is an EOA
 
@@ -113,6 +114,7 @@ Hint — use TWO facilitators (not one URL):
     solana mainnet → solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp
     solana devnet  → solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1
     base mainnet   → eip155:8453
+    polygon        → eip155:137
     base sepolia   → eip155:84532
 `);
   }

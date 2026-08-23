@@ -10,6 +10,8 @@ import { NETWORK_MAP, payToForNetwork } from "../src/config.js";
 const SOLANA_PAYTO = "DCi9X5mmacNGLeJvCw9fdWgX3G8V4QquDn4EuXATkcYr";
 const BASE_PAYTO =
   "0x34cfb8bdbf16e4484b7da0ed31deed5771b16c8f" as `0x${string}`;
+const POLY_PAYTO =
+  "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as `0x${string}`;
 
 function dualMainnetConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -133,5 +135,49 @@ describe("dual Solana + Base settlement discovery", () => {
     const tags = card.endpoints.paid[0]!.tags;
     expect(tags).toContain("multi-chain");
     expect(tags).not.toContain("solana");
+  });
+});
+
+describe("Solana + Base + Polygon settlement", () => {
+  const config = dualMainnetConfig({
+    payToPolygon: POLY_PAYTO,
+    networks: ["solana", "base", "polygon"],
+    networkIds: [NETWORK_MAP.solana, NETWORK_MAP.base, NETWORK_MAP.polygon],
+  });
+
+  it("payToForNetwork splits Base vs Polygon receivers", () => {
+    expect(payToForNetwork(config, NETWORK_MAP.solana)).toBe(SOLANA_PAYTO);
+    expect(payToForNetwork(config, NETWORK_MAP.base).toLowerCase()).toBe(
+      BASE_PAYTO.toLowerCase(),
+    );
+    expect(payToForNetwork(config, NETWORK_MAP.polygon).toLowerCase()).toBe(
+      POLY_PAYTO.toLowerCase(),
+    );
+    // Never confuse Base and Polygon wallets
+    expect(payToForNetwork(config, NETWORK_MAP.polygon).toLowerCase()).not.toBe(
+      BASE_PAYTO.toLowerCase(),
+    );
+  });
+
+  it("service card lists polygon without payTo", () => {
+    const card = buildServiceCard(config);
+    expect(card.settlement.networks).toHaveLength(3);
+    const poly = card.settlement.networks.find((n) => n.alias === "polygon");
+    expect(poly?.caip2).toBe(NETWORK_MAP.polygon);
+    expect((poly as { payTo?: string })?.payTo).toBeUndefined();
+    expect(card.settlement.facilitators.polygon).toBe("payai");
+  });
+
+  it("buildPaidRoutes emits Polygon accepts with POLY_PAY_TO", () => {
+    const routes = buildPaidRoutes(config, { cdpEnabled: true });
+    for (const key of Object.keys(routes)) {
+      const route = routes[key as keyof typeof routes];
+      expect(route.accepts).toHaveLength(3);
+      const poly = route.accepts.find((a) => a.network === NETWORK_MAP.polygon);
+      expect(poly?.scheme).toBe("exact");
+      expect(String(poly?.payTo).toLowerCase()).toBe(POLY_PAYTO.toLowerCase());
+      const base = route.accepts.find((a) => a.network === NETWORK_MAP.base);
+      expect(String(base?.payTo).toLowerCase()).toBe(BASE_PAYTO.toLowerCase());
+    }
   });
 });

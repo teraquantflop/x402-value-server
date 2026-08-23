@@ -1,4 +1,4 @@
-import express, { type Express, type Request, type Response } from "express";
+import express, { type Express } from "express";
 import { paymentMiddleware } from "@x402/express";
 import { config } from "./config.js";
 import { applySecurity, requestIdMiddleware } from "./middleware/security.js";
@@ -21,7 +21,12 @@ import {
 } from "./middleware/deferredJson.js";
 import { requestLogMiddleware } from "./middleware/requestLog.js";
 import { healthRouter } from "./routes/health.js";
-import { wellKnownRouter } from "./routes/wellKnown.js";
+import {
+  wellKnownRouter,
+  sendWellKnownAgent,
+  sendWellKnownResources,
+  sendWellKnownX402,
+} from "./routes/wellKnown.js";
 import { openapiRouter, sendOpenApi } from "./routes/openapi.js";
 import { llmsTxtRouter, sendLlmsTxt } from "./routes/llmsTxt.js";
 import { skillMdRouter, sendSkillMd } from "./routes/skillMd.js";
@@ -39,7 +44,6 @@ import {
 } from "./x402/facilitator.js";
 import { createResourceServer } from "./x402/resourceServer.js";
 import { buildPaidRoutes } from "./x402/routeConfig.js";
-import { buildWellKnownX402 } from "./discovery/catalog.js";
 import { mountMcpRoutes } from "./mcp/http.js";
 import type { x402ResourceServer } from "@x402/core/server";
 
@@ -52,16 +56,10 @@ export type AppLocals = {
  * Register free discovery routes on the Express app root.
  */
 function mountFreeDiscoveryRoutes(app: Express): void {
-  const sendWellKnown = (_req: Request, res: Response): void => {
-    res
-      .status(200)
-      .type("application/json")
-      .setHeader("Cache-Control", "public, max-age=60")
-      .json(buildWellKnownX402(config));
-  };
-
-  app.get("/.well-known/x402", sendWellKnown);
-  app.get("/.well-known/x402.json", sendWellKnown);
+  app.get("/.well-known/x402", sendWellKnownX402);
+  app.get("/.well-known/x402.json", sendWellKnownX402);
+  app.get("/.well-known/agent.json", sendWellKnownAgent);
+  app.get("/.well-known/x402-resources", sendWellKnownResources);
   app.get("/openapi.json", sendOpenApi);
   app.get("/swagger.json", sendOpenApi);
   app.get("/llms.txt", sendLlmsTxt);

@@ -59,6 +59,8 @@ describe("wallet hygiene on free routes", () => {
     "/openapi.json",
     "/llms.txt",
     "/.well-known/x402.json",
+    "/.well-known/agent.json",
+    "/.well-known/x402-resources",
     "/v1/demo/option-price",
   ])("%s does not expose wallets", async (path) => {
     const res = await fetch(`${baseUrl}${path}`);

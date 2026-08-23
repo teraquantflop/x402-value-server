@@ -33,6 +33,21 @@ export const PAYAI_SOLANA_NETWORKS = Object.freeze([
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
 ] as const);
 
+/** Polygon mainnet — PayAI Exact EVM (never Base). */
+export const PAYAI_POLYGON_NETWORK = "eip155:137" as const;
+
+/** Networks PayAI may advertise (Solana + optional Polygon; never Base). */
+export function payAiScopedNetworks(config: AppConfig): Set<string> {
+  const nets = new Set<string>([...PAYAI_SOLANA_NETWORKS]);
+  if (config.networks.includes("polygon") && config.payToPolygon) {
+    nets.add(PAYAI_POLYGON_NETWORK);
+  }
+  if (!config.cdpConfigured && config.networks.includes("base-sepolia")) {
+    nets.add("eip155:84532");
+  }
+  return nets;
+}
+
 export {
   CDP_SUPPORTED_AUTH,
   describeCdpSecretMeta,
@@ -64,6 +79,20 @@ export function syntheticCdpBaseSupported() {
       scheme: "exact" as const,
       network: network as `${string}:${string}`,
     })),
+    extensions: [] as string[],
+    signers: {} as Record<string, string[]>,
+  };
+}
+
+export function syntheticPolygonSupported() {
+  return {
+    kinds: [
+      {
+        x402Version: 2,
+        scheme: "exact" as const,
+        network: PAYAI_POLYGON_NETWORK as `${string}:${string}`,
+      },
+    ],
     extensions: [] as string[],
     signers: {} as Record<string, string[]>,
   };
@@ -204,9 +233,20 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
 
     try {
       const supported = await this.inner.getSupported();
-      const kinds = (supported.kinds ?? []).filter((k) =>
+      const kinds = [...(supported.kinds ?? []).filter((k) =>
         this.networks.has(k.network),
-      );
+      )];
+      // PayAI: ensure Polygon is registered when POLY_PAY_TO settlement is enabled
+      if (
+        this.name === "payai" &&
+        this.networks.has(PAYAI_POLYGON_NETWORK) &&
+        !kinds.some((k) => k.network === PAYAI_POLYGON_NETWORK)
+      ) {
+        console.warn(
+          "[facilitator] payai getSupported missing Polygon (warn-only); synthesizing eip155:137",
+        );
+        kinds.push(...syntheticPolygonSupported().kinds);
+      }
       return { ...supported, kinds };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -214,6 +254,15 @@ export class NetworkScopedFacilitator implements FacilitatorClient {
         `[facilitator] ${this.name} getSupported failed; skipping it:`,
         msg,
       );
+      if (
+        this.name === "payai" &&
+        this.networks.has(PAYAI_POLYGON_NETWORK)
+      ) {
+        console.warn(
+          "[facilitator] payai getSupported failed; synthesizing Solana skip + Polygon kinds",
+        );
+        return syntheticPolygonSupported();
+      }
       return { kinds: [], extensions: [], signers: {} };
     }
   }
@@ -230,19 +279,12 @@ export function createFacilitatorClient(
   });
 }
 
-function createPayAiClient(
-  config: AppConfig,
-  solanaOnly: boolean,
-): FacilitatorClient {
+function createPayAiClient(config: AppConfig): FacilitatorClient {
   const url = resolvePayAiUrl(config.facilitatorUrl);
   const inner = new HTTPFacilitatorClient({ url });
-  if (!solanaOnly) return inner;
-  return new NetworkScopedFacilitator(
-    inner,
-    new Set(PAYAI_SOLANA_NETWORKS),
-    "payai",
-    "filter",
-  );
+  // Always scope PayAI away from Base; include Polygon when POLY_PAY_TO set.
+  const nets = payAiScopedNetworks(config);
+  return new NetworkScopedFacilitator(inner, nets, "payai", "filter");
 }
 
 function cdpClientHasJwt(client: FacilitatorClient): boolean {
@@ -329,7 +371,7 @@ export function buildFacilitators(config: AppConfig): BuiltFacilitators {
   const payaiUrl = resolvePayAiUrl(config.facilitatorUrl);
   const cdpPair = createCdpScoped(config);
   const cdpEnabled = Boolean(cdpPair);
-  const payai = createPayAiClient(config, cdpEnabled);
+  const payai = createPayAiClient(config);
 
   const clients: FacilitatorClient[] = [];
   if (cdpPair) clients.push(cdpPair.scoped);
@@ -339,11 +381,10 @@ export function buildFacilitators(config: AppConfig): BuiltFacilitators {
     setCdpLastProbe("skipped");
   }
 
+  const payAiNets = [...payAiScopedNetworks(config)].join(",");
   console.log(
-    `[facilitator] PayAI enabled url=${payaiUrl}` +
-      (cdpEnabled
-        ? " (Solana-only; Base via CDP)"
-        : " (Solana; Base only if CDP configured)"),
+    `[facilitator] PayAI enabled url=${payaiUrl} networks=${payAiNets}` +
+      (cdpEnabled ? " (Base via CDP)" : ""),
   );
   logSettlementNetworks(config, cdpEnabled);
 

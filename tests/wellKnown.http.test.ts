@@ -117,9 +117,47 @@ describe("well-known x402 HTTP", () => {
     expect(oa.status).toBe(200);
     const wellKnown = (await wk.json()) as {
       x402Version: number;
-      links?: { openapi?: string };
+      links?: { openapi?: string; agent?: string; x402Resources?: string };
     };
     expect(wellKnown.x402Version).toBe(2);
     expect(wellKnown.links?.openapi).toContain("/openapi.json");
+    expect(wellKnown.links?.agent).toContain("/.well-known/agent.json");
+    expect(wellKnown.links?.x402Resources).toContain(
+      "/.well-known/x402-resources",
+    );
+  });
+
+  it("GET /.well-known/agent.json returns free agent card", async () => {
+    const res = await fetch(`${baseUrl}/.well-known/agent.json`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      name?: string;
+      protocol?: string;
+      networks?: unknown[];
+      links?: { x402?: string; resources?: string };
+    };
+    expect(body.protocol).toBe("x402");
+    expect(body.name).toBeTruthy();
+    expect(Array.isArray(body.networks)).toBe(true);
+    expect(body.links?.x402).toContain("/.well-known/x402.json");
+    expect(body.links?.resources).toContain("/.well-known/x402-resources");
+  });
+
+  it("GET /.well-known/x402-resources returns paid resource index", async () => {
+    const res = await fetch(`${baseUrl}/.well-known/x402-resources`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      protocol?: string;
+      scheme?: string;
+      resources?: { path: string; price: string }[];
+    };
+    expect(body.protocol).toBe("x402");
+    expect(body.scheme).toBe("exact");
+    expect(body.resources?.some((r) => r.path === "/v1/option/price")).toBe(
+      true,
+    );
+    expect(
+      body.resources?.some((r) => r.path === "/v1/volatility/surface"),
+    ).toBe(true);
   });
 });
