@@ -65,4 +65,57 @@ describe("optionInputSchema", () => {
     });
     expect(r.success).toBe(true);
   });
+
+  it("defaults optionStyle to european", () => {
+    const r = optionInputSchema.safeParse({
+      spot: 100,
+      strike: 100,
+      timeToExpiry: 1,
+      rate: 0.05,
+      volatility: 0.2,
+      optionType: "call",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.optionStyle).toBe("european");
+  });
+
+  it("accepts american + absolute window", () => {
+    const r = optionInputSchema.safeParse({
+      spot: 82.5,
+      strike: 80,
+      rate: 0.04,
+      volatility: 0.85,
+      optionType: "call",
+      optionStyle: "american",
+      forwardStart: "2026-09-23T14:00:00.000Z",
+      expiration: "2026-09-24T02:00:00.000Z",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects expiration + timeToExpiry together", () => {
+    const r = optionInputSchema.safeParse({
+      spot: 100,
+      strike: 100,
+      timeToExpiry: 1,
+      rate: 0.05,
+      volatility: 0.2,
+      optionType: "call",
+      expiration: "2026-09-23T00:00:00.000Z",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects expiration before forwardStart", () => {
+    const r = optionInputSchema.safeParse({
+      spot: 100,
+      strike: 100,
+      rate: 0.05,
+      volatility: 0.2,
+      optionType: "call",
+      forwardStart: "2026-09-24T00:00:00.000Z",
+      expiration: "2026-09-23T00:00:00.000Z",
+    });
+    expect(r.success).toBe(false);
+  });
 });

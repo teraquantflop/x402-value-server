@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { config } from "../config.js";
+import { optionStyleSchema } from "./optionCommon.js";
 
 const finitePositive = z
   .number({ invalid_type_error: "must be a number" })
@@ -35,6 +36,7 @@ export const portfolioGreeksInputSchema = z
     rate: finiteNumber,
     dividendYield: finiteNonNegative.optional().default(0),
     includeDollarGreeks: z.boolean().optional().default(false),
+    optionStyle: optionStyleSchema,
     positions: z
       .array(portfolioPositionSchema)
       .min(1)
@@ -55,6 +57,7 @@ export const portfolioScenarioInputSchema = z
   .object({
     rate: finiteNumber,
     dividendYield: finiteNonNegative.optional().default(0),
+    optionStyle: optionStyleSchema,
     positions: z
       .array(portfolioPositionSchema)
       .min(1)

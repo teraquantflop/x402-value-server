@@ -256,11 +256,15 @@ Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.we
 |-------|----------|-------------|
 | `spot` | yes | Underlying price \(S > 0\) |
 | `strike` | yes | Strike \(K > 0\) |
-| `timeToExpiry` | yes | Years to expiry \(T \ge 0\) |
+| `timeToExpiry` | if no `expiration` | Years to expiry \(T \ge 0\) (xor `expiration`) |
 | `rate` | yes | Continuous risk-free rate \(r\) |
-| `volatility` | yes | Annualized vol \(\sigma > 0\) |
+| `volatility` | yes | Annualized vol \(\sigma > 0\) (over window \(\tau\)) |
 | `optionType` | yes | `"call"` or `"put"` |
 | `dividendYield` | no | Continuous yield \(q\) (default `0`) |
+| `optionStyle` | no | `"european"` (default) or `"american"` |
+| `forwardStart` | no | ISO-8601 datetime (with `Z`/offset) — start of vol/exercise window |
+| `expiration` | no | ISO-8601 datetime — end of window (xor `timeToExpiry`) |
+| `treeSteps` | no | CRR steps for American (50–500; default 200 on single price) |
 
 **Headers (optional)**
 
@@ -280,6 +284,16 @@ Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.we
   },
   "inputs": { "...": "..." },
   "model": "black-scholes-merton",
+  "optionStyle": "european",
+  "timeline": {
+    "forwardStart": "…",
+    "expiration": "…",
+    "effectiveStart": "…",
+    "tauYears": 1,
+    "calendarYearsToExpiry": 1,
+    "yearBasis": "ACT/365.25"
+  },
+  "greeksQuality": "analytic",
   "units": {
     "vega": "dV/dσ per 1.0 absolute volatility (not per 1%)",
     "theta": "dV/dT per year (not per day)",
@@ -292,8 +306,11 @@ Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.we
 
 **Model notes**
 
-- European Black-Scholes-Merton with continuous dividend yield
-- Greeks use standard analytic formulas
+- **European** (default): Black-Scholes-Merton with continuous dividend yield; analytic Greeks
+- **American**: Cox–Ross–Rubinstein binomial with early exercise; Greeks via finite difference (`greeksQuality: "finite-difference"`)
+- **Forward-start / window**: vol and exercise rights live in \([\mathrm{effectiveStart},\mathrm{expiration}]\) where `effectiveStart = max(forwardStart, now)`. Model \(\tau\) = ACT/365.25 years in that window — **not** calendar time from purchase. Spot is the client mark (no extra PV discount now→forwardStart in v1).
+- **Not** a swing / multi-exercise engine (single American exercise over the window)
+- Power/futures-style early exercise: set `rate ≈ dividendYield` (or both `0`) — documented choice, not forced
 - **Vega / theta / rho** are raw derivatives (per 1.0 vol, per year, per 1.0 rate) — not the “per 1% / per day” trading-desk scalings
 
 ### `POST /v1/volatility/surface` (paid · x402 exact · USDC · default `$0.10`)

@@ -1,5 +1,10 @@
-import type { Greeks, OptionType } from "../types.js";
+import type { Greeks, OptionStyle, OptionType } from "../types.js";
 import { computeGreeks, priceOption } from "./blackScholes.js";
+import {
+  DEFAULT_TREE_STEPS_BATCH,
+  computeAmericanGreeksFd,
+  priceAmericanBinomial,
+} from "./americanBinomial.js";
 
 const SIGMA_MIN = 1e-4;
 
@@ -111,17 +116,19 @@ export function computeDollarGreeks(
 }
 
 /**
- * Price and aggregate a multi-leg European option portfolio.
+ * Price and aggregate a multi-leg option portfolio (European BSM or American CRR).
  */
 export function aggregatePortfolio(
   rate: number,
   dividendYield: number,
   positions: PortfolioPosition[],
   includeDollarGreeks = false,
+  optionStyle: OptionStyle = "european",
 ): PortfolioSnapshot {
   const legs: LegResult[] = [];
   let mtm = 0;
   let net = zeroGreeks();
+  const steps = DEFAULT_TREE_STEPS_BATCH;
 
   for (let i = 0; i < positions.length; i++) {
     const p = positions[i]!;
@@ -134,8 +141,14 @@ export function aggregatePortfolio(
       optionType: p.optionType,
       volatility: p.volatility,
     };
-    const price = priceOption(inputs);
-    const g = computeGreeks(inputs);
+    const price =
+      optionStyle === "american"
+        ? priceAmericanBinomial({ ...inputs, steps })
+        : priceOption(inputs);
+    const g =
+      optionStyle === "american"
+        ? computeAmericanGreeksFd({ ...inputs, steps })
+        : computeGreeks(inputs);
     const qty = p.quantity;
     const contribution = price * qty;
     const legGreeks = scaleGreeks(g, qty);
@@ -214,16 +227,29 @@ export function runPortfolioScenarios(
   dividendYield: number,
   positions: PortfolioPosition[],
   scenarios: ScenarioShock[],
+  optionStyle: OptionStyle = "european",
 ): {
   base: { mtm: number; greeks: Greeks };
   scenarios: ScenarioResult[];
 } {
-  const base = aggregatePortfolio(rate, dividendYield, positions, false);
+  const base = aggregatePortfolio(
+    rate,
+    dividendYield,
+    positions,
+    false,
+    optionStyle,
+  );
 
   const results: ScenarioResult[] = scenarios.map((s, i) => {
     const name = (s.name?.trim() || `scenario_${i}`).slice(0, 64);
     const shocked = positions.map((p) => shockPosition(p, s));
-    const snap = aggregatePortfolio(rate, dividendYield, shocked, false);
+    const snap = aggregatePortfolio(
+      rate,
+      dividendYield,
+      shocked,
+      false,
+      optionStyle,
+    );
     return {
       name,
       shocks: {

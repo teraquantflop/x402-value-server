@@ -1,4 +1,5 @@
 import type { Greeks, OptionInputs, OptionResult, OptionType } from "../types.js";
+import { resolveOptionTimeline } from "./timeline.js";
 
 const SQRT_2PI = Math.sqrt(2 * Math.PI);
 
@@ -168,11 +169,22 @@ function round(n: number, digits = 8): number {
   return Math.round(n * f) / f;
 }
 
+/**
+ * European BSM price + analytic Greeks.
+ * Prefer `priceOptionDispatch` when optionStyle / absolute timestamps may be present.
+ * Kept for direct European callers and golden tests.
+ */
 export function priceWithGreeks(
   inputs: OptionInputs,
   requestId: string,
   computedAt: string = new Date().toISOString(),
 ): OptionResult {
+  const nowMs = Date.parse(computedAt);
+  const timeline = resolveOptionTimeline({
+    timeToExpiry: inputs.timeToExpiry,
+    nowMs: Number.isFinite(nowMs) ? nowMs : Date.now(),
+  });
+
   const price = priceOption(inputs);
   const greeks = computeGreeks(inputs);
 
@@ -187,6 +199,9 @@ export function priceWithGreeks(
     },
     inputs,
     model: "black-scholes-merton",
+    optionStyle: "european",
+    timeline,
+    greeksQuality: "analytic",
     units: { ...UNITS },
     requestId,
     computedAt,

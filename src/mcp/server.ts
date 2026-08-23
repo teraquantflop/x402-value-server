@@ -10,7 +10,7 @@ import type { x402ResourceServer } from "@x402/core/server";
 import type { AppConfig } from "../types.js";
 import { payToForNetwork } from "../config.js";
 import { settlementNetworkIds } from "../x402/settlementNetworks.js";
-import { priceWithGreeks } from "../services/blackScholes.js";
+import { priceOptionDispatch } from "../services/priceDispatch.js";
 import { solveImpliedVol } from "../services/impliedVol.js";
 import { buildVolatilitySurface } from "../services/volatilitySurface.js";
 import { aggregatePortfolio, runPortfolioScenarios } from "../services/portfolio.js";
@@ -56,19 +56,39 @@ const optionToolSchema = {
     .number()
     .positive()
     .describe(
-      "Underlying S (>0). Equity spot or power/commodity forward mark for the option maturity.",
+      "Underlying S (>0). Equity spot or power/commodity forward mark for the option window.",
     ),
   strike: z.number().positive().describe("Strike K (>0)"),
-  timeToExpiry: z.number().nonnegative().describe("Year-fraction to expiry T"),
+  timeToExpiry: z
+    .number()
+    .nonnegative()
+    .optional()
+    .describe("Year-fraction to expiry T (xor expiration)"),
   rate: z.number().describe("Continuous risk-free rate r"),
   volatility: z.number().positive().describe("Annualized vol σ (>0)"),
-  optionType: z.enum(["call", "put"]).describe("European call or put"),
+  optionType: z.enum(["call", "put"]).describe("Call or put"),
   dividendYield: z
     .number()
     .nonnegative()
     .optional()
     .default(0)
     .describe("Continuous yield q (default 0)"),
+  optionStyle: z
+    .enum(["european", "american"])
+    .optional()
+    .default("european")
+    .describe('Exercise style (default "european")'),
+  forwardStart: z
+    .string()
+    .datetime({ offset: true })
+    .optional()
+    .describe("ISO-8601 start of vol/exercise window"),
+  expiration: z
+    .string()
+    .datetime({ offset: true })
+    .optional()
+    .describe("ISO-8601 end of vol/exercise window"),
+  treeSteps: z.number().int().min(50).max(500).optional(),
 };
 
 const impliedVolToolSchema = {
@@ -77,11 +97,15 @@ const impliedVolToolSchema = {
     .positive()
     .describe("Underlying S (>0); equity spot or forward mark"),
   strike: z.number().positive(),
-  timeToExpiry: z.number().nonnegative(),
+  timeToExpiry: z.number().nonnegative().optional(),
   rate: z.number(),
   dividendYield: z.number().nonnegative().optional().default(0),
   optionType: z.enum(["call", "put"]),
   premium: z.number().nonnegative().describe("Market option premium"),
+  optionStyle: z.enum(["european", "american"]).optional().default("european"),
+  forwardStart: z.string().datetime({ offset: true }).optional(),
+  expiration: z.string().datetime({ offset: true }).optional(),
+  treeSteps: z.number().int().min(50).max(500).optional(),
 };
 
 const surfaceOptionSchema = z.object({
@@ -90,7 +114,7 @@ const surfaceOptionSchema = z.object({
     .positive()
     .describe("Underlying for this row (may differ by maturity)"),
   strike: z.number().positive(),
-  timeToExpiry: z.number().nonnegative(),
+  timeToExpiry: z.number().nonnegative().optional(),
   optionType: z.enum(["call", "put"]),
   premium: z.number().nonnegative().describe("Market premium for this quote"),
 });
@@ -98,6 +122,10 @@ const surfaceOptionSchema = z.object({
 const surfaceToolSchema = {
   rate: z.number().describe("Shared continuous rate r"),
   dividendYield: z.number().nonnegative().optional().default(0),
+  optionStyle: z.enum(["european", "american"]).optional().default("european"),
+  forwardStart: z.string().datetime({ offset: true }).optional(),
+  expiration: z.string().datetime({ offset: true }).optional(),
+  treeSteps: z.number().int().min(50).max(500).optional(),
   options: z
     .array(surfaceOptionSchema)
     .min(1)
@@ -120,6 +148,7 @@ const portfolioGreeksToolSchema = {
   rate: z.number(),
   dividendYield: z.number().nonnegative().optional().default(0),
   includeDollarGreeks: z.boolean().optional().default(false),
+  optionStyle: z.enum(["european", "american"]).optional().default("european"),
   positions: z.array(portfolioPositionSchema).min(1),
 };
 
@@ -133,6 +162,7 @@ const scenarioShockSchema = z.object({
 const portfolioScenarioToolSchema = {
   rate: z.number(),
   dividendYield: z.number().nonnegative().optional().default(0),
+  optionStyle: z.enum(["european", "american"]).optional().default("european"),
   positions: z.array(portfolioPositionSchema).min(1),
   scenarios: z.array(scenarioShockSchema).min(1),
 };
@@ -177,6 +207,7 @@ const priceFromSurfaceToolSchema = {
   wingRule: z.literal(SURFACE_WING_RULE).optional(),
   rate: z.number(),
   dividendYield: z.number().nonnegative().optional().default(0),
+  optionStyle: z.enum(["european", "american"]).optional().default("european"),
   surface: z.array(surfacePointSchema).min(1),
   options: z.array(surfaceLegSchema).min(1),
 };
@@ -187,6 +218,7 @@ const scenarioFromSurfaceToolSchema = {
   wingRule: z.literal(SURFACE_WING_RULE).optional(),
   rate: z.number(),
   dividendYield: z.number().nonnegative().optional().default(0),
+  optionStyle: z.enum(["european", "american"]).optional().default("european"),
   sticky: z
     .enum(["moneyness", "strike", "fixed_vol"])
     .optional()
@@ -311,8 +343,9 @@ export async function createDerivativesMcpServer(
         payment:
           "Paid tools may require USDC exact on Solana and/or Base via x402. No API keys.",
         notes: [
-          "European Black-Scholes-Merton only (no American exercise, no local-vol PDE).",
-          "Vega/theta/rho are raw analytic derivatives (not per-1% / per-day desk scalings).",
+          "European BSM (default) or American CRR binomial; optional forwardStart/expiration window (ACT/365.25).",
+          "Not a swing/multi-exercise engine. No local-vol PDE.",
+          "European Greeks analytic; American Greeks finite-difference.",
         ],
       };
       return jsonResult(body);
@@ -323,21 +356,21 @@ export async function createDerivativesMcpServer(
     {
       name: "price_option",
       description: [
-        "Price a European option with Black-Scholes-Merton and return full analytic Greeks (delta, gamma, vega, theta, rho).",
-        "When to call: you already have model inputs (equity spot or commodity/power forward mark as S, strike, T, r, σ, call/put).",
-        "Markets: equity, FX-style European, commodity/power forwards (use maturity-specific forward as spot).",
-        "NOT for: American exercise, barrier/local-vol PDE, or inverting market premiums (use implied_vol / implied_vol_surface).",
-        `Payment: ${config.priceDollarString} USDC exact may be required (Solana and/or Base).`,
-        "Returns: price, greeks, units, requestId. Same engine as POST /v1/option/price.",
+        "Price a European (BSM) or American (CRR) option and return Greeks.",
+        "Optional forwardStart/expiration ISO-8601 window: vol accrues only in τ = years(effectiveStart, expiration), not calendar time from purchase.",
+        "When to call: model inputs (spot/forward mark, strike, T or timestamps, r, σ, call/put, optionStyle).",
+        "NOT for: swing/multi-exercise, barrier/local-vol PDE, or inverting premiums (use implied_vol).",
+        `Payment: ${config.priceDollarString} USDC exact may be required.`,
+        "Same engine as POST /v1/option/price.",
       ].join(" "),
       schema: optionToolSchema,
       price: config.priceDollarString,
-      serviceName: "BSM Price+Greeks",
+      serviceName: "Option Price+Greeks",
       tags: ["options", "greeks", "usdc"],
       resourceDescription:
-        "European BSM fair value + analytic Greeks for AI risk agents",
+        "European BSM or American CRR fair value + Greeks for AI risk agents",
       discoveryDescription:
-        "Price European option + Greeks from model inputs (S,K,T,r,σ). USDC may be required.",
+        "Price european/american option + Greeks (S,K,T or window,r,σ). USDC may be required.",
       inputSchema: {
         spot: { type: "number" },
         strike: { type: "number" },
@@ -346,18 +379,15 @@ export async function createDerivativesMcpServer(
         volatility: { type: "number" },
         optionType: { type: "string", enum: ["call", "put"] },
         dividendYield: { type: "number" },
+        optionStyle: { type: "string", enum: ["european", "american"] },
+        forwardStart: { type: "string" },
+        expiration: { type: "string" },
+        treeSteps: { type: "integer" },
       },
-      required: [
-        "spot",
-        "strike",
-        "timeToExpiry",
-        "rate",
-        "volatility",
-        "optionType",
-      ],
+      required: ["spot", "strike", "rate", "volatility", "optionType"],
       example: OPTION_EXAMPLE_INPUT,
       handler: (args) =>
-        priceWithGreeks(
+        priceOptionDispatch(
           {
             spot: args.spot,
             strike: args.strike,
@@ -366,17 +396,21 @@ export async function createDerivativesMcpServer(
             volatility: args.volatility,
             optionType: args.optionType,
             dividendYield: args.dividendYield ?? 0,
+            optionStyle: args.optionStyle,
+            forwardStart: args.forwardStart,
+            expiration: args.expiration,
+            treeSteps: args.treeSteps,
           },
-          randomUUID(),
+          { requestId: randomUUID() },
         ),
     },
     {
       name: "implied_vol",
       description: [
-        "Solve implied volatility from a single market premium, then return σ̂ and full analytic Greeks at that σ.",
-        "When to call: one European quote (premium known); not a full book.",
+        "Solve implied volatility from a single market premium (European BSM or American CRR), then return σ̂ and Greeks.",
+        "When to call: one quote (premium known); not a full book.",
         "Markets: equity or commodity/power forward mark as underlying.",
-        "NOT for: multi-quote surfaces (use implied_vol_surface), American options, or local-vol calibration.",
+        "NOT for: multi-quote surfaces (use implied_vol_surface) or local-vol calibration.",
         `Payment: ${config.priceImpliedVolDollarString} USDC exact may be required.`,
         "Same engine as POST /v1/option/implied-vol.",
       ].join(" "),
@@ -396,14 +430,7 @@ export async function createDerivativesMcpServer(
         optionType: { type: "string", enum: ["call", "put"] },
         premium: { type: "number" },
       },
-      required: [
-        "underlying",
-        "strike",
-        "timeToExpiry",
-        "rate",
-        "optionType",
-        "premium",
-      ],
+      required: ["underlying", "strike", "rate", "optionType", "premium"],
       example: IMPLIED_VOL_EXAMPLE_INPUT,
       handler: (args) =>
         solveImpliedVol(
@@ -415,6 +442,10 @@ export async function createDerivativesMcpServer(
             dividendYield: args.dividendYield ?? 0,
             optionType: args.optionType,
             premium: args.premium,
+            optionStyle: args.optionStyle,
+            forwardStart: args.forwardStart,
+            expiration: args.expiration,
+            treeSteps: args.treeSteps,
           },
           randomUUID(),
         ),
@@ -422,9 +453,9 @@ export async function createDerivativesMcpServer(
     {
       name: "implied_vol_surface",
       description: [
-        "Build an implied-vol smile/term structure from a strip of market premiums.",
-        "When to call: multi-strike multi-maturity premiums; each quote has its own underlying (power/commodity forwards may differ by maturity) and premium.",
-        "NOT for: single-premium IV (use implied_vol), scalar-σ pricing (use price_option), American options, or local-vol PDE.",
+        "Build an implied-vol smile/term structure from a strip of market premiums (European or American).",
+        "When to call: multi-strike multi-maturity premiums; optional shared forwardStart/expiration window.",
+        "NOT for: single-premium IV (use implied_vol), scalar-σ pricing (use price_option), or local-vol PDE.",
         `Payment: ${config.priceVolSurfaceDollarString} USDC exact may be required.`,
         "Same engine as POST /v1/volatility/surface.",
       ].join(" "),
@@ -439,13 +470,21 @@ export async function createDerivativesMcpServer(
       inputSchema: {
         rate: { type: "number" },
         dividendYield: { type: "number" },
+        optionStyle: { type: "string" },
         options: { type: "array" },
       },
       required: ["rate", "options"],
       example: VOL_SURFACE_EXAMPLE_INPUT,
       handler: (args) =>
         buildVolatilitySurface(
-          { rate: args.rate, dividendYield: args.dividendYield ?? 0 },
+          {
+            rate: args.rate,
+            dividendYield: args.dividendYield ?? 0,
+            optionStyle: args.optionStyle,
+            forwardStart: args.forwardStart,
+            expiration: args.expiration,
+            treeSteps: args.treeSteps,
+          },
           args.options,
           randomUUID(),
         ),
@@ -453,7 +492,7 @@ export async function createDerivativesMcpServer(
     {
       name: "price_from_surface",
       description: [
-        "Price European options on a submitted IV surface (total-variance bilinear in log-moneyness k=ln(K/F); wingRule=flat_vol).",
+        "Price options on a submitted IV surface (total-variance bilinear in log-moneyness k=ln(K/F); wingRule=flat_vol). Supports optionStyle european|american.",
         "When to call: you already have a smile/surface grid and need prices + Greeks at interpolated σ.",
         "NOT for: inventing Dupire/SABR/local vol; scalar σ (use price_option); inverting premiums (use implied_vol_surface).",
         `Payment: ${config.priceOptionFromSurfaceDollarString} USDC exact may be required.`,
@@ -480,6 +519,7 @@ export async function createDerivativesMcpServer(
             surfaceConvention: args.surfaceConvention,
             rate: args.rate,
             dividendYield: args.dividendYield ?? 0,
+            optionStyle: args.optionStyle,
             surface: args.surface,
             options: args.options,
           },
@@ -489,8 +529,8 @@ export async function createDerivativesMcpServer(
     {
       name: "scenario_from_surface",
       description: [
-        "Book reval on an IV surface: base vs scenario with sticky moneyness|strike|fixed_vol and optional F/rate/time/vol/smileTwist shocks.",
-        "When to call: need MTM change on a smile under shocks. Greeks are sticky-σ BS Greeks (not full smile bump deltas).",
+        "Book reval on an IV surface: base vs scenario with sticky moneyness|strike|fixed_vol and optional F/rate/time/vol/smileTwist shocks. Supports optionStyle.",
+        "When to call: need MTM change on a smile under shocks.",
         "NOT for: scalar-σ portfolio scenarios (use portfolio_scenario); static pricing only (use price_from_surface).",
         `Payment: ${config.priceScenarioFromSurfaceDollarString} USDC exact may be required.`,
         "Same engine as POST /v1/option/scenario-from-surface.",
@@ -523,6 +563,7 @@ export async function createDerivativesMcpServer(
             surfaceConvention: args.surfaceConvention,
             rate: args.rate,
             dividendYield: args.dividendYield ?? 0,
+            optionStyle: args.optionStyle,
             sticky: args.sticky ?? "moneyness",
             surface: args.surface,
             positions: args.positions,
@@ -534,9 +575,9 @@ export async function createDerivativesMcpServer(
     {
       name: "portfolio_greeks",
       description: [
-        "Net MTM + Greeks for a multi-leg European book (signed quantity: +long / −short). Optional dollar Greeks.",
+        "Net MTM + Greeks for a multi-leg book (signed quantity: +long / −short). optionStyle european|american. Optional dollar Greeks.",
         "When to call: multi-leg risk aggregation with per-leg scalar σ.",
-        "NOT for: smile/surface books (use price_from_surface / scenario_from_surface); American options.",
+        "NOT for: smile/surface books (use price_from_surface / scenario_from_surface).",
         `Payment: ${config.pricePortfolioGreeksDollarString} USDC exact may be required.`,
         "Same engine as POST /v1/portfolio/greeks.",
       ].join(" "),
@@ -551,6 +592,7 @@ export async function createDerivativesMcpServer(
         rate: { type: "number" },
         dividendYield: { type: "number" },
         includeDollarGreeks: { type: "boolean" },
+        optionStyle: { type: "string" },
         positions: { type: "array" },
       },
       required: ["rate", "positions"],
@@ -561,6 +603,7 @@ export async function createDerivativesMcpServer(
           args.dividendYield ?? 0,
           args.positions,
           args.includeDollarGreeks ?? false,
+          args.optionStyle ?? "european",
         );
         return {
           net: {
@@ -570,6 +613,7 @@ export async function createDerivativesMcpServer(
           },
           legs: snap.legs,
           positionCount: args.positions.length,
+          optionStyle: args.optionStyle ?? "european",
           requestId: randomUUID(),
           computedAt: new Date().toISOString(),
         };
@@ -578,7 +622,7 @@ export async function createDerivativesMcpServer(
     {
       name: "portfolio_scenario",
       description: [
-        "Reprice a multi-leg European book under relative spot/vol shocks and calendar time decay (per-leg scalar σ).",
+        "Reprice a multi-leg book under relative spot/vol shocks and calendar time decay (per-leg scalar σ). Supports optionStyle.",
         "When to call: what-if P&L on a scalar-σ book.",
         "NOT for: sticky smile scenarios (use scenario_from_surface).",
         `Payment: ${config.pricePortfolioScenarioDollarString} USDC exact may be required.`,
@@ -605,12 +649,14 @@ export async function createDerivativesMcpServer(
           args.dividendYield ?? 0,
           args.positions,
           args.scenarios,
+          args.optionStyle ?? "european",
         );
         return {
           base: result.base,
           scenarios: result.scenarios,
           positionCount: args.positions.length,
           scenarioCount: args.scenarios.length,
+          optionStyle: args.optionStyle ?? "european",
           requestId: randomUUID(),
           computedAt: new Date().toISOString(),
         };

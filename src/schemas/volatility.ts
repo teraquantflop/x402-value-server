@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { config } from "../config.js";
+import {
+  isoDateTimeSchema,
+  optionStyleSchema,
+  treeStepsSchema,
+} from "./optionCommon.js";
+import { resolveOptionTimeline, TimelineError } from "../services/timeline.js";
 
 const finitePositive = z
   .number({ invalid_type_error: "must be a number" })
@@ -21,7 +27,11 @@ export const surfaceOptionRowSchema = z
       "Underlying price S for this option (may differ by maturity)",
     ),
     strike: finitePositive.describe("Strike price K"),
-    timeToExpiry: finiteNonNegative.describe("Time to expiry in years T"),
+    timeToExpiry: finiteNonNegative
+      .optional()
+      .describe(
+        "Time to expiry in years T (required per row unless request-level forwardStart/expiration set)",
+      ),
     optionType: z.enum(["call", "put"]).describe("Option type"),
     premium: finiteNonNegative.describe("Market option premium"),
   })
@@ -34,6 +44,16 @@ export const volatilitySurfaceInputSchema = z
       .optional()
       .default(0)
       .describe("Shared continuous dividend yield q (default 0)"),
+    optionStyle: optionStyleSchema,
+    forwardStart: isoDateTimeSchema
+      .optional()
+      .describe("Shared ISO-8601 window start for all rows (optional)"),
+    expiration: isoDateTimeSchema
+      .optional()
+      .describe(
+        "Shared ISO-8601 window end for all rows. When set, all rows share derived τ.",
+      ),
+    treeSteps: treeStepsSchema.optional(),
     options: z
       .array(surfaceOptionRowSchema)
       .min(1, "at least one option required")
@@ -42,7 +62,60 @@ export const volatilitySurfaceInputSchema = z
         `at most ${config.maxSurfaceOptions} options`,
       ),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    const hasShared =
+      data.forwardStart !== undefined || data.expiration !== undefined;
+
+    if (hasShared) {
+      if (data.expiration === undefined && data.forwardStart !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Shared forwardStart on a surface requires expiration (or omit both and use per-row timeToExpiry)",
+          path: ["expiration"],
+        });
+        return;
+      }
+      let tau: number;
+      try {
+        tau = resolveOptionTimeline({
+          forwardStart: data.forwardStart,
+          expiration: data.expiration,
+        }).tauYears;
+      } catch (err) {
+        const code =
+          err instanceof TimelineError ? err.code : "timeline_invalid";
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? `${code}: ${err.message}` : String(err),
+          path: ["expiration"],
+        });
+        return;
+      }
+      for (let i = 0; i < data.options.length; i++) {
+        const t = data.options[i]!.timeToExpiry;
+        if (t !== undefined && Math.abs(t - tau) > 1e-9) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `timeline_conflict: row timeToExpiry=${t} must match shared τ=${tau} or be omitted`,
+            path: ["options", i, "timeToExpiry"],
+          });
+        }
+      }
+      return;
+    }
+
+    for (let i = 0; i < data.options.length; i++) {
+      if (data.options[i]!.timeToExpiry === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "timeToExpiry is required on each option when no shared expiration is set",
+          path: ["options", i, "timeToExpiry"],
+        });
+      }
+    }
+  });
 
 export type VolatilitySurfaceInput = z.infer<typeof volatilitySurfaceInputSchema>;
 

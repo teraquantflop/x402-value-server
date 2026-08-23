@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  isoDateTimeSchema,
+  optionStyleSchema,
+  optionalTimeToExpirySchema,
+  refineOptionTimeline,
+  treeStepsSchema,
+} from "./optionCommon.js";
 
 const finitePositive = z
   .number({ invalid_type_error: "must be a number" })
@@ -18,7 +25,7 @@ export const impliedVolInputSchema = z
   .object({
     underlying: finitePositive.describe("Underlying price S"),
     strike: finitePositive.describe("Strike K"),
-    timeToExpiry: finiteNonNegative.describe("Year-fraction to expiry T"),
+    timeToExpiry: optionalTimeToExpirySchema,
     rate: finiteNumber.describe("Continuous risk-free rate r"),
     dividendYield: finiteNonNegative
       .optional()
@@ -26,8 +33,13 @@ export const impliedVolInputSchema = z
       .describe("Continuous yield q (default 0)"),
     optionType: z.enum(["call", "put"]),
     premium: finiteNonNegative.describe("Market option premium"),
+    optionStyle: optionStyleSchema,
+    forwardStart: isoDateTimeSchema.optional(),
+    expiration: isoDateTimeSchema.optional(),
+    treeSteps: treeStepsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(refineOptionTimeline);
 
 export type ImpliedVolInput = z.infer<typeof impliedVolInputSchema>;
 
@@ -54,7 +66,10 @@ export const IMPLIED_VOL_EXAMPLE_OUTPUT = {
   priceError: 0,
   iterations: 12,
   converged: true,
-  inputs: IMPLIED_VOL_EXAMPLE_INPUT,
+  inputs: { ...IMPLIED_VOL_EXAMPLE_INPUT, optionStyle: "european" as const },
+  optionStyle: "european" as const,
+  model: "black-scholes-merton" as const,
+  greeksQuality: "analytic" as const,
   requestId: "00000000-0000-4000-8000-000000000003",
   computedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -63,7 +78,7 @@ export const impliedVolInputJsonSchema = {
   type: "object",
   title: "ImpliedVolRequest",
   description:
-    "Solve Black-Scholes implied volatility from a single market premium.",
+    "Solve implied volatility from a single market premium (European BSM or American CRR).",
   properties: {
     underlying: {
       type: "number",
@@ -78,7 +93,7 @@ export const impliedVolInputJsonSchema = {
     timeToExpiry: {
       type: "number",
       minimum: 0,
-      description: "Time to expiry in years",
+      description: "Time to expiry in years (xor expiration)",
     },
     rate: { type: "number", description: "Continuous risk-free rate r" },
     dividendYield: {
@@ -92,15 +107,16 @@ export const impliedVolInputJsonSchema = {
       minimum: 0,
       description: "Observed market premium",
     },
+    optionStyle: {
+      type: "string",
+      enum: ["european", "american"],
+      default: "european",
+    },
+    forwardStart: { type: "string", format: "date-time" },
+    expiration: { type: "string", format: "date-time" },
+    treeSteps: { type: "integer", minimum: 50, maximum: 500 },
   },
-  required: [
-    "underlying",
-    "strike",
-    "timeToExpiry",
-    "rate",
-    "optionType",
-    "premium",
-  ],
+  required: ["underlying", "strike", "rate", "optionType", "premium"],
   additionalProperties: false,
 } as const;
 
@@ -115,6 +131,10 @@ export const impliedVolOutputJsonSchema = {
     iterations: { type: "integer" },
     converged: { type: "boolean" },
     inputs: { type: "object" },
+    optionStyle: { type: "string" },
+    model: { type: "string" },
+    timeline: { type: "object" },
+    greeksQuality: { type: "string" },
     requestId: { type: "string" },
     computedAt: { type: "string" },
   },

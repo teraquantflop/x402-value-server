@@ -1,5 +1,10 @@
-import type { Greeks } from "../types.js";
+import type { Greeks, OptionStyle } from "../types.js";
 import { computeGreeks, priceOption } from "./blackScholes.js";
+import {
+  DEFAULT_TREE_STEPS_BATCH,
+  computeAmericanGreeksFd,
+  priceAmericanBinomial,
+} from "./americanBinomial.js";
 import {
   buildSurfaceGrid,
   interpolateVol,
@@ -54,6 +59,7 @@ export interface PriceFromSurfaceParams {
   surfaceConvention?: string;
   interpolation?: string;
   wingRule?: string;
+  optionStyle?: OptionStyle;
 }
 
 export function prepareSurfaceGrid(surface: RawSurfacePoint[]): {
@@ -70,6 +76,7 @@ export function priceLegOnSurface(
   leg: SurfacePriceLeg,
   rate: number,
   dividendYield: number,
+  optionStyle: OptionStyle = "european",
 ): {
   forward: number;
   k: number;
@@ -91,8 +98,15 @@ export function priceLegOnSurface(
     optionType: leg.optionType,
     volatility: sigma,
   };
-  const price = priceOption(inputs);
-  const greeks = computeGreeks(inputs);
+  const steps = DEFAULT_TREE_STEPS_BATCH;
+  const price =
+    optionStyle === "american"
+      ? priceAmericanBinomial({ ...inputs, steps })
+      : priceOption(inputs);
+  const greeks =
+    optionStyle === "american"
+      ? computeAmericanGreeksFd({ ...inputs, steps })
+      : computeGreeks(inputs);
   return {
     forward: F,
     k: round(k),
@@ -118,12 +132,14 @@ export function priceFromSurface(
 
   const { grid, warnings } = prepareSurfaceGrid(params.surface);
   const allWarnings = [...warnings];
+  const style = params.optionStyle ?? "european";
   const results = params.options.map((leg, index) => {
     const priced = priceLegOnSurface(
       grid,
       leg,
       params.rate,
       params.dividendYield,
+      style,
     );
     allWarnings.push(...priced.warnings.map((w) => `option[${index}]: ${w}`));
     return {
@@ -170,7 +186,11 @@ export function priceFromSurface(
       wingRule: params.wingRule ?? SURFACE_WING_RULE,
     },
     warnings: [...new Set(allWarnings)],
-    model: "black-scholes-merton+surface-tv-bilinear" as const,
+    optionStyle: style,
+    model:
+      style === "american"
+        ? ("binomial-crr-american+surface-tv-bilinear" as const)
+        : ("black-scholes-merton+surface-tv-bilinear" as const),
     requestId,
     computedAt,
   };

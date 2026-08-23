@@ -17,14 +17,39 @@ export type ChainFamily = "evm" | "svm";
 
 export type OptionType = "call" | "put";
 
+export type OptionStyle = "european" | "american";
+
+export type PricingModelId =
+  | "black-scholes-merton"
+  | "binomial-crr-american";
+
+export type GreeksQuality = "analytic" | "finite-difference";
+
+/** Vol-accrual / exercise window resolved from timestamps or timeToExpiry. */
+export interface OptionTimeline {
+  forwardStart: string;
+  expiration: string;
+  effectiveStart: string;
+  /** Model life τ in years (ACT/365.25) — vol accrues only here. */
+  tauYears: number;
+  /** Calendar years from evaluation now → expiration. */
+  calendarYearsToExpiry: number;
+  yearBasis: "ACT/365.25";
+}
+
 export interface OptionInputs {
   spot: number;
   strike: number;
+  /** Resolved model time T (= tauYears). */
   timeToExpiry: number;
   rate: number;
   volatility: number;
   optionType: OptionType;
   dividendYield: number;
+  optionStyle?: OptionStyle;
+  forwardStart?: string;
+  expiration?: string;
+  treeSteps?: number;
 }
 
 export interface Greeks {
@@ -39,7 +64,11 @@ export interface OptionResult {
   price: number;
   greeks: Greeks;
   inputs: OptionInputs;
-  model: "black-scholes-merton";
+  model: PricingModelId;
+  optionStyle: OptionStyle;
+  timeline: OptionTimeline;
+  greeksQuality: GreeksQuality;
+  treeSteps?: number;
   units: {
     price: string;
     delta: string;

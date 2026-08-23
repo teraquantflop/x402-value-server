@@ -81,7 +81,11 @@ describe("buildVolatilitySurface", () => {
     const result = buildVolatilitySurface(market, opts, "test-id");
     expect(result.requestId).toBe("test-id");
     expect(result.stats.solver).toBe("fastImpliedVol");
-    expect(result.market).toEqual({ rate: 0.05, dividendYield: 0 });
+    expect(result.market).toEqual({
+      rate: 0.05,
+      dividendYield: 0,
+      optionStyle: "european",
+    });
     expect(result.fit.okCount).toBe(2);
     expect(result.points).toHaveLength(2);
     expect(result.points[0]!.underlying).toBe(100);

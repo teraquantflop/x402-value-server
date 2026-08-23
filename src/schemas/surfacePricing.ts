@@ -5,6 +5,7 @@ import {
   SURFACE_INTERPOLATION,
   SURFACE_WING_RULE,
 } from "../services/surfaceInterpolator.js";
+import { optionStyleSchema } from "./optionCommon.js";
 
 const finitePositive = z
   .number({ invalid_type_error: "must be a number" })
@@ -66,6 +67,7 @@ const surfaceSharedFields = {
   wingRule: z.literal(SURFACE_WING_RULE).optional().default(SURFACE_WING_RULE),
   rate: finiteNumber,
   dividendYield: finiteNonNegative.optional().default(0),
+  optionStyle: optionStyleSchema,
   surface: z
     .array(surfacePointSchema)
     .min(1)

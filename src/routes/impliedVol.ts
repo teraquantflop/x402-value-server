@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { impliedVolInputSchema } from "../schemas/impliedVol.js";
 import { solveImpliedVol } from "../services/impliedVol.js";
+import { TimelineError } from "../services/timeline.js";
 import { getRequestId } from "../middleware/security.js";
 import { HttpError } from "../middleware/errorHandler.js";
 
@@ -24,7 +25,15 @@ impliedVolRouter.post("/v1/option/implied-vol", (req, res, next) => {
       );
     }
 
-    const result = solveImpliedVol(parsed.data, requestId);
+    let result;
+    try {
+      result = solveImpliedVol(parsed.data, requestId);
+    } catch (err) {
+      if (err instanceof TimelineError) {
+        throw new HttpError(400, err.code, err.message);
+      }
+      throw err;
+    }
 
     if (!result.converged) {
       throw new HttpError(

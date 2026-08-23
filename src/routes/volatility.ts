@@ -28,13 +28,28 @@ volatilityRouter.post("/v1/volatility/surface", (req, res, next) => {
       );
     }
 
-    const { rate, dividendYield, options } = parsed.data;
+    const {
+      rate,
+      dividendYield,
+      options,
+      optionStyle,
+      forwardStart,
+      expiration,
+      treeSteps,
+    } = parsed.data;
     console.log(
-      `[volatility/surface] compute requestId=${requestId} options=${options.length} rate=${rate} q=${dividendYield}`,
+      `[volatility/surface] compute requestId=${requestId} options=${options.length} rate=${rate} q=${dividendYield} style=${optionStyle}`,
     );
 
     const result = buildVolatilitySurface(
-      { rate, dividendYield },
+      {
+        rate,
+        dividendYield,
+        optionStyle,
+        forwardStart,
+        expiration,
+        treeSteps,
+      },
       options,
       requestId,
     );

@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  isoDateTimeSchema,
+  optionStyleSchema,
+  optionalTimeToExpirySchema,
+  refineOptionTimeline,
+  treeStepsSchema,
+} from "./optionCommon.js";
 
 const finitePositive = z
   .number({ invalid_type_error: "must be a number" })
@@ -18,7 +25,7 @@ export const optionInputSchema = z
   .object({
     spot: finitePositive.describe("Current underlying price S"),
     strike: finitePositive.describe("Strike price K"),
-    timeToExpiry: finiteNonNegative.describe("Time to expiry in years T"),
+    timeToExpiry: optionalTimeToExpirySchema,
     rate: finiteNumber.describe("Continuously compounded risk-free rate r"),
     volatility: finitePositive.describe("Annualized volatility σ (> 0)"),
     optionType: z.enum(["call", "put"]).describe("Option type"),
@@ -26,8 +33,21 @@ export const optionInputSchema = z
       .optional()
       .default(0)
       .describe("Continuous dividend yield q (default 0)"),
+    optionStyle: optionStyleSchema,
+    forwardStart: isoDateTimeSchema
+      .optional()
+      .describe(
+        "ISO-8601 start of exercise/vol window (optional; default now). Vol accrues only after effectiveStart.",
+      ),
+    expiration: isoDateTimeSchema
+      .optional()
+      .describe(
+        "ISO-8601 end of exercise/vol window. Mutually exclusive with timeToExpiry.",
+      ),
+    treeSteps: treeStepsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(refineOptionTimeline);
 
 export type OptionInputBody = z.infer<typeof optionInputSchema>;
 
@@ -56,6 +76,20 @@ export const OPTION_POWER_EXAMPLE_INPUT = {
   dividendYield: 0,
 };
 
+/** American forward-start window example (power-style). */
+export const OPTION_AMERICAN_FORWARD_EXAMPLE_INPUT = {
+  spot: 82.5,
+  strike: 80,
+  rate: 0.04,
+  volatility: 0.85,
+  optionType: "call" as const,
+  dividendYield: 0.04,
+  optionStyle: "american" as const,
+  forwardStart: "2026-09-23T14:00:00.000Z",
+  expiration: "2026-09-24T02:00:00.000Z",
+  treeSteps: 200,
+};
+
 export const OPTION_EXAMPLE_OUTPUT = {
   price: 10.45057562,
   greeks: {
@@ -65,8 +99,18 @@ export const OPTION_EXAMPLE_OUTPUT = {
     theta: -6.41402764,
     rho: 53.23248343,
   },
-  inputs: OPTION_EXAMPLE_INPUT,
-  model: "black-scholes-merton",
+  inputs: { ...OPTION_EXAMPLE_INPUT, optionStyle: "european" as const },
+  model: "black-scholes-merton" as const,
+  optionStyle: "european" as const,
+  timeline: {
+    forwardStart: "2026-01-01T00:00:00.000Z",
+    expiration: "2027-01-01T06:00:00.000Z",
+    effectiveStart: "2026-01-01T00:00:00.000Z",
+    tauYears: 1,
+    calendarYearsToExpiry: 1,
+    yearBasis: "ACT/365.25" as const,
+  },
+  greeksQuality: "analytic" as const,
   units: {
     price: "option value in spot currency units",
     delta: "dV/dS (share equivalent)",
@@ -82,14 +126,14 @@ export const OPTION_EXAMPLE_OUTPUT = {
 /** Agent-oriented JSON Schema for Bazaar / discovery. */
 export const optionInputJsonSchema = {
   type: "object",
-  title: "EuropeanOptionPriceRequest",
+  title: "OptionPriceRequest",
   description:
-    "Inputs for Black-Scholes-Merton European option fair value. Use consistent units (e.g. USD/MWh for power, USD/bbl for oil, index points for equities). timeToExpiry in year-fractions (0.25 ≈ 3 months). Equity ATM example: spot=100,K=100,T=1,σ=0.2. Power-style: spot=82.5 (forward mark), strike=80, T=0.25, σ=0.35.",
+    "European (default) or American option fair value. Legacy bodies use timeToExpiry year-fractions. Optional forwardStart+expiration (ISO-8601 with Z/offset) define a vol/exercise window; τ = years in that window (ACT/365.25), not calendar time from purchase. Not a swing/multi-exercise engine.",
   properties: {
     spot: {
       type: "number",
       description:
-        "Underlying price S (> 0). Equity spot OR power/commodity forward mark for the option's maturity (forwards often differ by delivery period).",
+        "Underlying price S (> 0). Equity spot OR power/commodity forward mark for the option's window.",
       exclusiveMinimum: 0,
       examples: [100, 82.5, 45.5],
     },
@@ -102,52 +146,69 @@ export const optionInputJsonSchema = {
     timeToExpiry: {
       type: "number",
       description:
-        "Time to expiry T in years (≥ 0). Examples: 1/12≈0.083 monthly, 0.25 quarterly, 1 annual.",
+        "Time to expiry T in years (≥ 0). Required unless expiration is set. Mutually exclusive with expiration.",
       minimum: 0,
       examples: [0.25, 1.0],
     },
     rate: {
       type: "number",
       description:
-        "Continuously compounded risk-free rate r (e.g. 0.05 = 5%). Use discount-appropriate funding rate for the market.",
+        "Continuously compounded risk-free rate r (e.g. 0.05 = 5%). For futures-style early exercise set r≈dividendYield.",
       examples: [0.03, 0.05],
     },
     volatility: {
       type: "number",
       description:
-        "Annualized volatility σ as a decimal (> 0). Example: 0.2 = 20% vol. Not percent points.",
+        "Annualized volatility σ as a decimal (> 0). Applies over the vol-accrual window τ.",
       exclusiveMinimum: 0,
       examples: [0.15, 0.2, 0.45],
     },
     optionType: {
       type: "string",
       enum: ["call", "put"],
-      description: "European call or put.",
+      description: "Call or put.",
     },
     dividendYield: {
       type: "number",
       description:
-        "Continuous dividend / convenience / yield q (≥ 0, default 0). For FX-style, map foreign rate; for commodities often convenience yield; equities dividend yield.",
+        "Continuous dividend / convenience / yield q (≥ 0, default 0).",
       minimum: 0,
       examples: [0, 0.02],
     },
+    optionStyle: {
+      type: "string",
+      enum: ["european", "american"],
+      description: 'Exercise style (default "european"). American uses CRR binomial with early exercise.',
+      default: "european",
+    },
+    forwardStart: {
+      type: "string",
+      format: "date-time",
+      description:
+        "ISO-8601 start of vol/exercise window. If ≤ now, behaves like plain option to expiration.",
+    },
+    expiration: {
+      type: "string",
+      format: "date-time",
+      description:
+        "ISO-8601 end of vol/exercise window. Mutually exclusive with timeToExpiry.",
+    },
+    treeSteps: {
+      type: "integer",
+      minimum: 50,
+      maximum: 500,
+      description: "CRR steps for American (default 200 on single price).",
+    },
   },
-  required: [
-    "spot",
-    "strike",
-    "timeToExpiry",
-    "rate",
-    "volatility",
-    "optionType",
-  ],
+  required: ["spot", "strike", "rate", "volatility", "optionType"],
   additionalProperties: false,
 } as const;
 
 export const optionOutputJsonSchema = {
   type: "object",
-  title: "EuropeanOptionPriceResponse",
+  title: "OptionPriceResponse",
   description:
-    "Fair value and analytic Greeks for hedging and risk. Vega/theta/rho are raw derivatives (per 1.0 vol, per year, per 1.0 rate) — not trader 1%/day scalings.",
+    "Fair value and Greeks. European Greeks are analytic BSM; American Greeks are finite-difference on the CRR tree. timeline.tauYears is the model life (window); calendarYearsToExpiry is purchase→expiry.",
   properties: {
     price: {
       type: "number",
@@ -155,40 +216,34 @@ export const optionOutputJsonSchema = {
     },
     greeks: {
       type: "object",
-      description: "Analytic Black-Scholes-Merton Greeks for hedge construction",
+      description: "Greeks for hedge construction",
       properties: {
-        delta: {
-          type: "number",
-          description: "∂V/∂S — underlying hedge ratio (shares / units)",
-        },
-        gamma: {
-          type: "number",
-          description: "∂²V/∂S² — convexity / delta re-hedge intensity",
-        },
-        vega: {
-          type: "number",
-          description: "∂V/∂σ per 1.0 absolute vol (not per 1%)",
-        },
-        theta: {
-          type: "number",
-          description: "∂V/∂T per year (not per calendar day)",
-        },
-        rho: {
-          type: "number",
-          description: "∂V/∂r per 1.0 absolute rate (not per 1%)",
-        },
+        delta: { type: "number", description: "∂V/∂S" },
+        gamma: { type: "number", description: "∂²V/∂S²" },
+        vega: { type: "number", description: "∂V/∂σ per 1.0 absolute vol" },
+        theta: { type: "number", description: "∂V/∂T per year" },
+        rho: { type: "number", description: "∂V/∂r per 1.0 absolute rate" },
       },
       required: ["delta", "gamma", "vega", "theta", "rho"],
     },
     inputs: {
       type: "object",
-      description: "Echo of validated request inputs",
+      description: "Echo of validated request inputs (timeToExpiry may be resolved τ)",
     },
     model: {
       type: "string",
-      description: "Pricing model identifier",
-      const: "black-scholes-merton",
+      enum: ["black-scholes-merton", "binomial-crr-american"],
     },
+    optionStyle: { type: "string", enum: ["european", "american"] },
+    timeline: {
+      type: "object",
+      description: "Resolved ACT/365.25 window",
+    },
+    greeksQuality: {
+      type: "string",
+      enum: ["analytic", "finite-difference"],
+    },
+    treeSteps: { type: "integer" },
     units: {
       type: "object",
       description: "Human/agent readable unit notes for price and Greeks",
@@ -199,5 +254,15 @@ export const optionOutputJsonSchema = {
       description: "ISO-8601 UTC timestamp of computation",
     },
   },
-  required: ["price", "greeks", "inputs", "model", "requestId", "computedAt"],
+  required: [
+    "price",
+    "greeks",
+    "inputs",
+    "model",
+    "optionStyle",
+    "timeline",
+    "greeksQuality",
+    "requestId",
+    "computedAt",
+  ],
 } as const;

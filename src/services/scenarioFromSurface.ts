@@ -1,5 +1,10 @@
-import type { Greeks } from "../types.js";
+import type { Greeks, OptionStyle } from "../types.js";
 import { computeGreeks, priceOption } from "./blackScholes.js";
+import {
+  DEFAULT_TREE_STEPS_BATCH,
+  computeAmericanGreeksFd,
+  priceAmericanBinomial,
+} from "./americanBinomial.js";
 import {
   clampSigma,
   interpolateVol,
@@ -47,6 +52,7 @@ export interface ScenarioFromSurfaceParams {
   surface: RawSurfacePoint[];
   positions: SurfacePriceLeg[];
   sticky?: StickyMode;
+  optionStyle?: OptionStyle;
   scenario: SurfaceScenarioShock;
   surfaceConvention?: string;
 }
@@ -102,6 +108,7 @@ function priceAt(
   type: "call" | "put",
   sigma: number,
   qty: number,
+  optionStyle: OptionStyle = "european",
 ): { price: number; greeks: Greeks; contribution: number } {
   const inputs = {
     spot: F,
@@ -112,8 +119,15 @@ function priceAt(
     optionType: type,
     volatility: sigma,
   };
-  const price = priceOption(inputs);
-  const greeks = computeGreeks(inputs);
+  const steps = DEFAULT_TREE_STEPS_BATCH;
+  const price =
+    optionStyle === "american"
+      ? priceAmericanBinomial({ ...inputs, steps })
+      : priceOption(inputs);
+  const greeks =
+    optionStyle === "american"
+      ? computeAmericanGreeksFd({ ...inputs, steps })
+      : computeGreeks(inputs);
   return {
     price: round(price),
     greeks: roundGreeks(greeks),
@@ -192,6 +206,7 @@ export function scenarioFromSurface(
     allWarnings.push(
       ...baseInterp.warnings.map((w) => `leg[${index}].base: ${w}`),
     );
+    const style = params.optionStyle ?? "european";
     const basePriced = priceAt(
       FBase,
       leg.strike,
@@ -201,6 +216,7 @@ export function scenarioFromSurface(
       leg.optionType,
       baseInterp.sigma,
       leg.quantity,
+      style,
     );
 
     const { F: FScen, warnings: fWarn } = applyUnderlyingShock(FBase, shock);
@@ -236,6 +252,7 @@ export function scenarioFromSurface(
       leg.optionType,
       scenVol.sigma,
       leg.quantity,
+      style,
     );
 
     return {
@@ -317,7 +334,11 @@ export function scenarioFromSurface(
       convention: SURFACE_CONVENTION,
     },
     warnings: [...new Set(allWarnings)],
-    model: "black-scholes-merton+surface-tv-bilinear" as const,
+    optionStyle: params.optionStyle ?? "european",
+    model:
+      (params.optionStyle ?? "european") === "american"
+        ? ("binomial-crr-american+surface-tv-bilinear" as const)
+        : ("black-scholes-merton+surface-tv-bilinear" as const),
     requestId,
     computedAt,
   };

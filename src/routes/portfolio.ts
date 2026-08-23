@@ -30,12 +30,19 @@ portfolioRouter.post("/v1/portfolio/greeks", (req, res, next) => {
       );
     }
 
-    const { rate, dividendYield, includeDollarGreeks, positions } = parsed.data;
+    const {
+      rate,
+      dividendYield,
+      includeDollarGreeks,
+      positions,
+      optionStyle,
+    } = parsed.data;
     const snap = aggregatePortfolio(
       rate,
       dividendYield,
       positions,
       includeDollarGreeks,
+      optionStyle,
     );
 
     res.status(200).json({
@@ -46,6 +53,11 @@ portfolioRouter.post("/v1/portfolio/greeks", (req, res, next) => {
       },
       legs: snap.legs,
       positionCount: positions.length,
+      optionStyle,
+      model:
+        optionStyle === "american"
+          ? "binomial-crr-american"
+          : "black-scholes-merton",
       requestId,
       computedAt: new Date().toISOString(),
     });
@@ -72,12 +84,14 @@ portfolioRouter.post("/v1/portfolio/scenario", (req, res, next) => {
       );
     }
 
-    const { rate, dividendYield, positions, scenarios } = parsed.data;
+    const { rate, dividendYield, positions, scenarios, optionStyle } =
+      parsed.data;
     const result = runPortfolioScenarios(
       rate,
       dividendYield,
       positions,
       scenarios,
+      optionStyle,
     );
 
     res.status(200).json({
@@ -85,6 +99,11 @@ portfolioRouter.post("/v1/portfolio/scenario", (req, res, next) => {
       scenarios: result.scenarios,
       positionCount: positions.length,
       scenarioCount: scenarios.length,
+      optionStyle,
+      model:
+        optionStyle === "american"
+          ? "binomial-crr-american"
+          : "black-scholes-merton",
       requestId,
       computedAt: new Date().toISOString(),
     });
