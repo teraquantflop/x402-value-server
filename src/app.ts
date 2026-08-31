@@ -43,7 +43,15 @@ import {
   type BuiltFacilitators,
 } from "./x402/facilitator.js";
 import { createResourceServer } from "./x402/resourceServer.js";
-import { buildPaidRoutes } from "./x402/routeConfig.js";
+import {
+  buildPaidRoutes,
+  paidPostPaths,
+  withHeadChallenges,
+} from "./x402/routeConfig.js";
+import {
+  allowPostOnPaidHead,
+  createPaidHeadRouter,
+} from "./routes/paidHead.js";
 import { mountMcpRoutes } from "./mcp/http.js";
 import type { x402ResourceServer } from "@x402/core/server";
 
@@ -103,6 +111,12 @@ export function createApp(): Express {
   let resourceServer: x402ResourceServer | null = null;
   let builtFacilitators: BuiltFacilitators | null = null;
 
+  // Path list is independent of CDP; accepts for challenges use cdpEnabled below.
+  const paidPaths = paidPostPaths(
+    buildPaidRoutes(config, { cdpEnabled: false }),
+  );
+  app.use(allowPostOnPaidHead(new Set(paidPaths)));
+
   if (config.skipPayment) {
     console.warn(
       "[warn] SKIP_PAYMENT=1 — x402 payment gate is DISABLED (local/debug only)",
@@ -112,11 +126,13 @@ export function createApp(): Express {
     resourceServer = createResourceServer(builtFacilitators.clients, config, {
       cdpEnabled: builtFacilitators.cdpEnabled,
     });
-    const paidRoutes = buildPaidRoutes(config, {
-      cdpEnabled: builtFacilitators.cdpEnabled,
-    });
+    const paidRoutes = withHeadChallenges(
+      buildPaidRoutes(config, {
+        cdpEnabled: builtFacilitators.cdpEnabled,
+      }),
+    );
     const payMw = paymentMiddleware(paidRoutes, resourceServer);
-    // Payment first: unpaid → 402 before Zod / stashed JSON errors
+    // Payment first: unpaid POST/HEAD → 402 before Zod / stashed JSON errors
     // (skipped when free-tier or OptionBookClient matched)
     app.use(skipPaymentIfFreeTier(payMw));
   }
@@ -141,6 +157,9 @@ export function createApp(): Express {
   const locals = app.locals as AppLocals;
   locals.x402ResourceServer = resourceServer;
   locals.facilitators = builtFacilitators;
+
+  // HEAD stubs: no compute (only reached if payment gate skipped / cleared)
+  app.use(createPaidHeadRouter(paidPaths));
 
   // Paid handlers: Zod validation only runs after payment gate above
   app.use(optionRouter);

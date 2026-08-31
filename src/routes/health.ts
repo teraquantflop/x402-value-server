@@ -50,6 +50,8 @@ healthRouter.get("/health", (_req, res) => {
       scenarioFromSurface: config.priceScenarioFromSurfaceDollarString,
     },
     capabilities: SERVICE_CATALOG.capabilities,
+    uptimeHint:
+      "GET /health (liveness). HEAD or unpaid POST on paid routes returns 402; POST with x402 payment returns 200.",
     timestamp: new Date().toISOString(),
   });
 });

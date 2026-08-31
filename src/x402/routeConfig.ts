@@ -336,3 +336,43 @@ export function buildPaidRoutes(
     },
   };
 }
+
+export type PaidRoutesMap = ReturnType<typeof buildPaidRoutes>;
+
+/**
+ * Clone each POST paid route to HEAD with the same accepts[].
+ * Uptime monitors send HEAD; @x402/express matches method+path, so HEAD must
+ * be registered or Express returns 404. Discovery catalogs stay POST-only.
+ * Strip bazaar extensions on HEAD clones (POST body schemas are invalid for HEAD).
+ */
+export function withHeadChallenges<T extends Record<string, unknown>>(
+  routes: T,
+): T & Record<string, T[keyof T]> {
+  const out: Record<string, unknown> = { ...routes };
+  for (const key of Object.keys(routes)) {
+    if (!key.startsWith("POST ")) continue;
+    const path = key.slice("POST ".length);
+    const headKey = `HEAD ${path}`;
+    if (out[headKey] !== undefined) continue;
+    const postCfg = routes[key as keyof T] as Record<string, unknown>;
+    const { extensions: _ext, ...rest } = postCfg;
+    out[headKey] = {
+      ...rest,
+      description:
+        typeof rest.description === "string"
+          ? `HEAD challenge for ${path} (POST to compute)`
+          : rest.description,
+    };
+  }
+  return out as T & Record<string, T[keyof T]>;
+}
+
+/** Absolute paths of paid POST resources (no method prefix). */
+export function paidPostPaths(
+  routes: Record<string, unknown> = {},
+): string[] {
+  return Object.keys(routes)
+    .filter((k) => k.startsWith("POST "))
+    .map((k) => k.slice("POST ".length))
+    .sort();
+}
