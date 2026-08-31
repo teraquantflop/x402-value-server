@@ -27,6 +27,15 @@ describe("buildLlmsTxt", () => {
       expect(text).toMatch(/mcp|price_option/i);
     }
   });
+
+  it("includes exact when to use / when not to use fence", () => {
+    const text = buildLlmsTxt(config);
+    expect(text).toContain("## When to use");
+    expect(text).toContain("## When not to use");
+    expect(text).toContain(SERVICE_CATALOG.whenToUse);
+    expect(text).toContain(SERVICE_CATALOG.whenNotToUse);
+    expect(text).not.toMatch(/nowcast|pjm/i);
+  });
 });
 
 describe("GET /llms.txt HTTP", () => {
@@ -58,6 +67,9 @@ describe("GET /llms.txt HTTP", () => {
     expect(body).toContain("/v1/option/price");
     expect(body).toContain("openapi.json");
     expect(body).toMatch(/x402|USDC/i);
+    expect(body).toContain("When to use");
+    expect(body).toContain("When not to use");
+    expect(body).not.toMatch(/nowcast|pjm/i);
   });
 
   it("is listed on service card and well-known links", async () => {
@@ -68,10 +80,29 @@ describe("GET /llms.txt HTTP", () => {
     expect(cardRes.status).toBe(200);
     expect(wkRes.status).toBe(200);
     const card = (await cardRes.json()) as {
+      whenToUse?: string;
+      whenNotToUse?: string;
       endpoints: { free: { path: string }[] };
     };
     const wk = (await wkRes.json()) as { links?: { llmsTxt?: string } };
     expect(card.endpoints.free.some((e) => e.path === "/llms.txt")).toBe(true);
     expect(wk.links?.llmsTxt).toContain("/llms.txt");
+    expect(card.whenToUse).toBe(SERVICE_CATALOG.whenToUse);
+    expect(card.whenNotToUse).toBe(SERVICE_CATALOG.whenNotToUse);
+    const cardText = JSON.stringify(card);
+    expect(cardText).not.toMatch(/nowcast|pjm/i);
+  });
+
+  it("GET /robots.txt is 200 with User-agent allow-list", async () => {
+    const res = await fetch(`${baseUrl}/robots.txt`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/text\/plain/);
+    expect(res.headers.get("cache-control")).toMatch(/max-age=3600/);
+    const body = await res.text();
+    expect(body).toContain("User-agent");
+    expect(body).toContain("Allow: /");
+    expect(body).toContain("/.well-known/");
+    expect(body).toContain("/v1/demo/");
+    expect(body).not.toMatch(/Disallow:\s*\/v1\//);
   });
 });

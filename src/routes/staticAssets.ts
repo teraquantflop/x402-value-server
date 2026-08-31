@@ -60,3 +60,8 @@ staticAssetsRouter.get("/favicon.png", (_req: Request, res: Response) => {
 staticAssetsRouter.get("/apple-touch-icon.png", (_req: Request, res: Response) => {
   sendFile(res, "favicon.png", "image/png");
 });
+
+/** Crawler allow-list for free discovery (does not gate x402 buyers). */
+staticAssetsRouter.get("/robots.txt", (_req: Request, res: Response) => {
+  sendFile(res, "robots.txt", "text/plain; charset=utf-8", 3600);
+});

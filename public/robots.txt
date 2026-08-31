@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Allow: /health
+Allow: /llms.txt
+Allow: /openapi.json
+Allow: /.well-known/
+Allow: /v1/demo/

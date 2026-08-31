@@ -21,6 +21,13 @@ export const SERVICE_CATALOG = {
   tagline:
     "Pay-per-call European option pricing, analytic Greeks, IV surfaces, and multi-leg book risk for power, commodity, equity, and crypto agents.",
   /**
+   * Exact product fence for reviewers/agents (GET /, /llms.txt). Do not paraphrase.
+   */
+  whenToUse:
+    "European or American options on a listed window or forward (power / commodity / equity), when you already have S or the maturity mark, K, times, r, and σ or a premium; you need fair value + Greeks or IV / surface — not a live market-data feed.",
+  whenNotToUse:
+    'You need market data or realized window volatility from a market data feed; you do not already have model inputs; you want a generic ticker screener or "price any stock."',
+  /**
    * English-first capability summary for agents (GET /, /llms.txt).
    * Emphasize energy/power multi-maturity books and multi-leg risk, not only generic BSM.
    */
@@ -335,6 +342,8 @@ export function buildServiceCard(config: AppConfig) {
     version: config.serviceVersion,
     tagline: SERVICE_CATALOG.tagline,
     description: SERVICE_CATALOG.description,
+    whenToUse: SERVICE_CATALOG.whenToUse,
+    whenNotToUse: SERVICE_CATALOG.whenNotToUse,
     capabilitySummary: [...SERVICE_CATALOG.capabilitySummary],
     capabilities: [...SERVICE_CATALOG.capabilities],
     useCases: [...SERVICE_CATALOG.useCases],
@@ -502,6 +511,11 @@ export function buildServiceCard(config: AppConfig) {
           path: "/llms.txt",
           description:
             "Agent-oriented Markdown summary (llms.txt convention): capabilities, paid endpoints, discovery links",
+        },
+        {
+          method: "GET",
+          path: "/robots.txt",
+          description: "Crawler allow-list for free discovery paths",
         },
         {
           method: "GET",
@@ -683,6 +697,8 @@ export function buildWellKnownAgent(config: AppConfig) {
   return {
     name: card.productName,
     description: card.tagline,
+    whenToUse: card.whenToUse,
+    whenNotToUse: card.whenNotToUse,
     url: base,
     version: card.version,
     protocol: "x402",
@@ -696,6 +712,7 @@ export function buildWellKnownAgent(config: AppConfig) {
       x402: `${base}/.well-known/x402.json`,
       resources: `${base}/.well-known/x402-resources`,
       health: `${base}/health`,
+      robots: `${base}/robots.txt`,
     },
   };
 }
