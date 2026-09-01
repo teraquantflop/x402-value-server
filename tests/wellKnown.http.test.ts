@@ -134,13 +134,42 @@ describe("well-known x402 HTTP", () => {
       name?: string;
       protocol?: string;
       networks?: unknown[];
-      links?: { x402?: string; resources?: string };
+      links?: { x402?: string; resources?: string; agentCard?: string };
     };
     expect(body.protocol).toBe("x402");
     expect(body.name).toBeTruthy();
     expect(Array.isArray(body.networks)).toBe(true);
     expect(body.links?.x402).toContain("/.well-known/x402.json");
     expect(body.links?.resources).toContain("/.well-known/x402-resources");
+    expect(body.links?.agentCard).toContain("/.well-known/agent-card.json");
+  });
+
+  it("GET /.well-known/agent-card.json aliases agent.json (same JSON)", async () => {
+    const [a, b] = await Promise.all([
+      fetch(`${baseUrl}/.well-known/agent.json`),
+      fetch(`${baseUrl}/.well-known/agent-card.json`),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(b.headers.get("content-type")).toMatch(/application\/json/);
+    const ja = await a.json();
+    const jb = await b.json();
+    expect(jb).toEqual(ja);
+    const text = JSON.stringify(jb);
+    expect(text).not.toMatch(/0x[a-fA-F0-9]{40}/);
+    expect(text.toLowerCase()).not.toMatch(/"payto"/);
+  });
+
+  it("POST /.well-known/agent-card.json returns 405 Allow GET", async () => {
+    const res = await fetch(`${baseUrl}/.well-known/agent-card.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(405);
+    expect((res.headers.get("allow") ?? "").toUpperCase()).toContain("GET");
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("method_not_allowed");
   });
 
   it("GET /.well-known/x402-resources returns paid resource index", async () => {

@@ -60,6 +60,7 @@ describe("wallet hygiene on free routes", () => {
     "/llms.txt",
     "/.well-known/x402.json",
     "/.well-known/agent.json",
+    "/.well-known/agent-card.json",
     "/.well-known/x402-resources",
     "/v1/demo/option-price",
   ])("%s does not expose wallets", async (path) => {

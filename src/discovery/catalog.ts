@@ -493,6 +493,12 @@ export function buildServiceCard(config: AppConfig) {
         },
         {
           method: "GET",
+          path: "/.well-known/agent-card.json",
+          description:
+            "A2A agent card alias (same JSON body as /.well-known/agent.json)",
+        },
+        {
+          method: "GET",
           path: "/.well-known/x402-resources",
           description: "Paid x402 resources summary (paths, prices, networks)",
         },
@@ -671,6 +677,7 @@ export function buildWellKnownX402(config: AppConfig) {
       health: `${base}/health`,
       wellKnown: `${base}/.well-known/x402.json`,
       agent: `${base}/.well-known/agent.json`,
+      agentCard: `${base}/.well-known/agent-card.json`,
       x402Resources: `${base}/.well-known/x402-resources`,
       openapi: `${base}/openapi.json`,
       swagger: `${base}/swagger.json`,
@@ -710,6 +717,8 @@ export function buildWellKnownAgent(config: AppConfig) {
       llmsTxt: `${base}/llms.txt`,
       skillMd: `${base}/skill.md`,
       x402: `${base}/.well-known/x402.json`,
+      agent: `${base}/.well-known/agent.json`,
+      agentCard: `${base}/.well-known/agent-card.json`,
       resources: `${base}/.well-known/x402-resources`,
       health: `${base}/health`,
       robots: `${base}/robots.txt`,

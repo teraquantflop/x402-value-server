@@ -67,6 +67,7 @@ function mountFreeDiscoveryRoutes(app: Express): void {
   app.get("/.well-known/x402", sendWellKnownX402);
   app.get("/.well-known/x402.json", sendWellKnownX402);
   app.get("/.well-known/agent.json", sendWellKnownAgent);
+  app.get("/.well-known/agent-card.json", sendWellKnownAgent);
   app.get("/.well-known/x402-resources", sendWellKnownResources);
   app.get("/openapi.json", sendOpenApi);
   app.get("/swagger.json", sendOpenApi);

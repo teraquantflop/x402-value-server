@@ -89,6 +89,8 @@ export function buildLlmsTxt(config: AppConfig): string {
     `- [Swagger alias](${abs(base, "/swagger.json")}) — same as OpenAPI`,
     `- [Skill](${abs(base, "/skill.md")}) · [SKILL.md](${abs(base, "/SKILL.md")})`,
     `- [x402 well-known](${abs(base, "/.well-known/x402.json")})`,
+    `- [Agent card](${abs(base, "/.well-known/agent.json")})`,
+    `- [A2A agent card](${abs(base, "/.well-known/agent-card.json")}) — alias of agent.json`,
     `- [llms.txt](${abs(base, "/llms.txt")}) — this file`,
   );
 

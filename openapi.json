@@ -260,6 +260,87 @@
         }
       }
     },
+    "/.well-known/agent.json": {
+      "get": {
+        "operationId": "getWellKnownAgent",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Fetch the compact agent discovery card",
+        "description": "Compact agent card (name, description, networks, MCP, links). Free — no payment required. Same payload as /.well-known/agent-card.json.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "Agent discovery card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/agent-card.json": {
+      "get": {
+        "operationId": "getWellKnownAgentCard",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Fetch the A2A agent card alias for this service",
+        "description": "A2A-style agent card alias. Identical JSON to /.well-known/agent.json. Free — no payment required. Paid POSTs (/v1/option/price, /v1/volatility/surface, …) remain x402 USDC exact; discovery GETs are free.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "Agent card (same body as agent.json)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postWellKnownAgentCardRejected",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Reject non-GET on the agent card",
+        "description": "Agent card is GET-only. Returns 405 with Allow: GET.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "405": {
+            "description": "Method not allowed — use GET",
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string",
+                  "example": "GET"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/option/price": {
       "post": {
         "operationId": "priceOption",
