@@ -21,7 +21,12 @@ export type OptionStyle = "european" | "american";
 
 export type PricingModelId =
   | "black-scholes-merton"
-  | "binomial-crr-american";
+  | "binomial-crr-american"
+  | "black-76";
+
+export type PricingModelFlag = "bsm" | "black76";
+
+export type GreekConvention = "raw" | "trading";
 
 export type GreeksQuality = "analytic" | "finite-difference";
 
@@ -50,6 +55,10 @@ export interface OptionInputs {
   forwardStart?: string;
   expiration?: string;
   treeSteps?: number;
+  /** Forward mark F when model is black76 (optional echo). */
+  forward?: number;
+  model?: PricingModelFlag;
+  greekConvention?: GreekConvention;
 }
 
 export interface Greeks {
@@ -68,6 +77,7 @@ export interface OptionResult {
   optionStyle: OptionStyle;
   timeline: OptionTimeline;
   greeksQuality: GreeksQuality;
+  greekConvention: GreekConvention;
   treeSteps?: number;
   units: {
     price: string;

@@ -36,6 +36,13 @@ describe("buildLlmsTxt", () => {
     expect(text).toContain(SERVICE_CATALOG.whenNotToUse);
     expect(text).not.toMatch(/nowcast|pjm/i);
   });
+
+  it("documents MCP Accept header when MCP enabled", () => {
+    if (!config.mcpEnabled) return;
+    const text = buildLlmsTxt(config);
+    expect(text).toMatch(/Accept:\s*`?application\/json,\s*text\/event-stream/);
+    expect(text).toMatch(/MCP initialize curl/i);
+  });
 });
 
 describe("GET /llms.txt HTTP", () => {

@@ -1,14 +1,17 @@
 /**
- * Dispatch European BSM vs American CRR after timeline resolution.
- * Does not modify closed-form BSM; American is a sibling engine.
+ * Dispatch European BSM / Black-76 / American CRR after timeline resolution.
+ * Does not modify closed-form BSM; Black-76 and American are sibling engines.
  */
 import type {
+  GreekConvention,
   OptionInputs,
   OptionResult,
   OptionStyle,
   OptionTimeline,
+  PricingModelFlag,
 } from "../types.js";
 import { computeGreeks, priceOption } from "./blackScholes.js";
+import { computeBlack76Greeks, priceBlack76 } from "./black76.js";
 import {
   DEFAULT_TREE_STEPS_BATCH,
   DEFAULT_TREE_STEPS_PRICE,
@@ -21,15 +24,10 @@ import {
   resolveOptionTimeline,
   type TimelineRequest,
 } from "./timeline.js";
-
-const UNITS = {
-  price: "option value in spot currency units",
-  delta: "dV/dS (share equivalent)",
-  gamma: "d²V/dS²",
-  vega: "dV/dσ per 1.0 absolute volatility (not per 1%)",
-  theta: "dV/dT per year (not per day)",
-  rho: "dV/dr per 1.0 absolute rate (not per 1%)",
-} as const;
+import {
+  scaleGreeksForConvention,
+  unitsForConvention,
+} from "./greekConvention.js";
 
 function round(n: number, digits = 8): number {
   if (!Number.isFinite(n)) return n;
@@ -54,7 +52,8 @@ function roundGreeks(g: {
 }
 
 export type PriceRequestBody = {
-  spot: number;
+  spot?: number;
+  forward?: number;
   strike: number;
   rate: number;
   volatility: number;
@@ -62,6 +61,8 @@ export type PriceRequestBody = {
   dividendYield?: number;
   timeToExpiry?: number;
   optionStyle?: OptionStyle;
+  model?: PricingModelFlag;
+  greekConvention?: GreekConvention;
   forwardStart?: string;
   expiration?: string;
   treeSteps?: number;
@@ -85,7 +86,8 @@ export function buildTimelineFromBody(
 }
 
 /**
- * Price + Greeks with style + timeline. Legacy european+timeToExpiry matches prior BSM.
+ * Price + Greeks with style + timeline + optional Black-76 / greekConvention.
+ * Legacy european+timeToExpiry+bsm matches prior BSM.
  */
 export function priceOptionDispatch(
   body: PriceRequestBody,
@@ -94,6 +96,8 @@ export function priceOptionDispatch(
   const computedAt = opts.computedAt ?? new Date().toISOString();
   const nowMs = opts.nowMs ?? Date.parse(computedAt);
   const style: OptionStyle = body.optionStyle ?? "european";
+  const modelFlag: PricingModelFlag = body.model ?? "bsm";
+  const greekConvention: GreekConvention = body.greekConvention ?? "raw";
 
   const timeline = resolveOptionTimeline({
     timeToExpiry: body.timeToExpiry,
@@ -102,8 +106,61 @@ export function priceOptionDispatch(
     nowMs,
   });
 
+  if (modelFlag === "black76") {
+    const F = body.forward ?? body.spot;
+    if (F === undefined) {
+      throw new Error("forward or spot required for model=black76");
+    }
+    const blackInputs = {
+      forward: F,
+      strike: body.strike,
+      timeToExpiry: timeline.tauYears,
+      rate: body.rate,
+      volatility: body.volatility,
+      optionType: body.optionType,
+    };
+    const price = priceBlack76(blackInputs);
+    const greeks = scaleGreeksForConvention(
+      computeBlack76Greeks(blackInputs),
+      greekConvention,
+    );
+    const inputs: OptionInputs = {
+      spot: body.spot ?? F,
+      forward: F,
+      strike: body.strike,
+      timeToExpiry: timeline.tauYears,
+      rate: body.rate,
+      volatility: body.volatility,
+      optionType: body.optionType,
+      dividendYield: 0,
+      optionStyle: "european",
+      model: "black76",
+      greekConvention,
+      forwardStart: body.forwardStart,
+      expiration: body.expiration,
+    };
+    return {
+      price: round(price),
+      greeks: roundGreeks(greeks),
+      inputs,
+      model: "black-76",
+      optionStyle: "european",
+      timeline,
+      greeksQuality: "analytic",
+      greekConvention,
+      units: unitsForConvention(greekConvention),
+      requestId: opts.requestId,
+      computedAt,
+    };
+  }
+
+  const spot = body.spot;
+  if (spot === undefined) {
+    throw new Error("spot is required when model is bsm");
+  }
+
   const inputs: OptionInputs = {
-    spot: body.spot,
+    spot,
     strike: body.strike,
     timeToExpiry: timeline.tauYears,
     rate: body.rate,
@@ -111,6 +168,8 @@ export function priceOptionDispatch(
     optionType: body.optionType,
     dividendYield: body.dividendYield ?? 0,
     optionStyle: style,
+    model: "bsm",
+    greekConvention,
     forwardStart: body.forwardStart,
     expiration: body.expiration,
     treeSteps: body.treeSteps,
@@ -123,7 +182,10 @@ export function priceOptionDispatch(
       DEFAULT_TREE_STEPS_PRICE;
     const params = americanParamsFromInputs(inputs, steps);
     const price = priceAmericanBinomial(params);
-    const greeks = computeAmericanGreeksFd(params);
+    const greeks = scaleGreeksForConvention(
+      computeAmericanGreeksFd(params),
+      greekConvention,
+    );
     return {
       price: round(price),
       greeks: roundGreeks(greeks),
@@ -132,15 +194,19 @@ export function priceOptionDispatch(
       optionStyle: "american",
       timeline,
       greeksQuality: "finite-difference",
+      greekConvention,
       treeSteps: steps,
-      units: { ...UNITS },
+      units: unitsForConvention(greekConvention),
       requestId: opts.requestId,
       computedAt,
     };
   }
 
   const price = priceOption(inputs);
-  const greeks = computeGreeks(inputs);
+  const greeks = scaleGreeksForConvention(
+    computeGreeks(inputs),
+    greekConvention,
+  );
   return {
     price: round(price),
     greeks: roundGreeks(greeks),
@@ -149,7 +215,8 @@ export function priceOptionDispatch(
     optionStyle: "european",
     timeline,
     greeksQuality: "analytic",
-    units: { ...UNITS },
+    greekConvention,
+    units: unitsForConvention(greekConvention),
     requestId: opts.requestId,
     computedAt,
   };

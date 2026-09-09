@@ -16,18 +16,35 @@ export function mcpAcceptIsOk(acceptHeader: string | undefined): boolean {
   );
 }
 
+/** Exact Accept header required by Streamable HTTP MCP. */
+export const MCP_ACCEPT_HEADER = "application/json, text/event-stream";
+
+export function mcpInitializeCurlExample(config: AppConfig): string {
+  const base = config.publicBaseUrl.replace(/\/$/, "");
+  const path = config.mcpPath.startsWith("/")
+    ? config.mcpPath
+    : `/${config.mcpPath}`;
+  return (
+    `curl -sS -X POST '${base}${path}' ` +
+    `-H 'Content-Type: application/json' ` +
+    `-H 'Accept: ${MCP_ACCEPT_HEADER}' ` +
+    `-d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}'`
+  );
+}
+
 function sendMcpNotAcceptable(res: Response, config: AppConfig): void {
   const docs = `${config.publicBaseUrl.replace(/\/$/, "")}/llms.txt`;
   res.status(406).json({
     jsonrpc: "2.0",
     error: {
       code: -32000,
-      message:
-        "Not Acceptable: Streamable HTTP MCP requires Accept: application/json, text/event-stream",
+      message: `Not Acceptable: Streamable HTTP MCP requires Accept: ${MCP_ACCEPT_HEADER}`,
       data: {
-        hint: "This is a live x402 MCP server. Retry initialize with both types.",
+        hint: `Retry with header Accept: ${MCP_ACCEPT_HEADER}`,
+        acceptRequired: MCP_ACCEPT_HEADER,
         path: config.mcpPath,
         docs,
+        curlExample: mcpInitializeCurlExample(config),
       },
     },
     id: null,

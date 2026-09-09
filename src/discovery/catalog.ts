@@ -37,7 +37,7 @@ export const SERVICE_CATALOG = {
     "price and revalue books on a submitted IV smile (total-variance bilinear in log-moneyness); " +
     "aggregate multi-leg net Greeks; reprice books under spot/vol/time scenarios. " +
     "Designed for power and energy desks (forward marks that differ by maturity), commodities, equities, and crypto — " +
-    "no API keys, USDC exact settlement via HTTP 402 on Solana and/or Base. " +
+    "no API keys, USDC exact settlement via HTTP 402 on configured networks (see GET /v1/capabilities). " +
     "Free fixed demo at /v1/demo/option-price; MCP tools at /mcp; paid HTTP routes remain the source of truth.",
   capabilities: [
     "european_option_pricing",
@@ -90,9 +90,17 @@ function chainHint(config: AppConfig): string {
     if (n === "solana") return "Solana";
     if (n === "solana-devnet") return "Solana Devnet";
     if (n === "base") return "Base";
-    return "Base Sepolia";
+    if (n === "polygon") return "Polygon";
+    if (n === "base-sepolia") return "Base Sepolia";
+    return n;
   });
   return parts.join("/");
+}
+
+/** Human network list from live config (for llms / blurbs). */
+export function networksPhrase(config: AppConfig): string {
+  const hint = chainHint(config);
+  return hint.length > 0 ? hint.replace(/\//g, " + ") : "configured networks";
 }
 
 /** Single Bazaar settlement tag (≤1 of 5 slots). Prefer multi-chain when both families enabled. */
@@ -125,11 +133,11 @@ export function optionPriceDiscovery(config: AppConfig) {
     serviceName: "BSM Price+Greeks",
     description: description.slice(0, 500),
     tags: clampTags([
-      "options",
-      "greeks",
-      "power",
+      "mark",
+      "hedge_greeks",
       settlementTag(config),
       "usdc",
+      "options",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -157,11 +165,11 @@ export function impliedVolDiscovery(config: AppConfig) {
     serviceName: "Single IV Solver",
     description: description.slice(0, 500),
     tags: clampTags([
-      "implied-vol",
-      "options",
-      "greeks",
+      "iv_calib",
+      "mark",
       settlementTag(config),
       "usdc",
+      "options",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -187,11 +195,11 @@ export function volatilitySurfaceDiscovery(config: AppConfig) {
     serviceName: "IV Surface Desk",
     description: description.slice(0, 500),
     tags: clampTags([
-      "volatility",
-      "iv-surface",
-      "power",
+      "iv_calib",
+      "mark",
       settlementTag(config),
       "usdc",
+      "volatility",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -216,11 +224,11 @@ export function portfolioGreeksDiscovery(config: AppConfig) {
     serviceName: "Portfolio Net Greeks",
     description: description.slice(0, 500),
     tags: clampTags([
-      "portfolio",
-      "greeks",
-      "risk",
+      "book_risk",
+      "hedge_greeks",
       settlementTag(config),
       "usdc",
+      "portfolio",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -246,10 +254,10 @@ export function portfolioScenarioDiscovery(config: AppConfig) {
     description: description.slice(0, 500),
     tags: clampTags([
       "scenario",
-      "portfolio",
-      "risk",
+      "book_risk",
       settlementTag(config),
       "usdc",
+      "portfolio",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -275,11 +283,11 @@ export function priceFromSurfaceDiscovery(config: AppConfig) {
     serviceName: "Price From Surface",
     description: description.slice(0, 500),
     tags: clampTags([
-      "surface-price",
-      "options",
-      "smile",
+      "mark",
+      "hedge_greeks",
       settlementTag(config),
       "usdc",
+      "smile",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -307,10 +315,10 @@ export function scenarioFromSurfaceDiscovery(config: AppConfig) {
     description: description.slice(0, 500),
     tags: clampTags([
       "scenario",
-      "surface-price",
-      "risk",
+      "mark",
       settlementTag(config),
       "usdc",
+      "smile",
     ]),
     mimeType: "application/json" as const,
     agentHints: {
@@ -417,7 +425,15 @@ export function buildServiceCard(config: AppConfig) {
             "portfolio_scenario",
           ],
           transport: "streamable-http-stateless",
-          note: "MCP is a façade over the same pricing services; USDC payment may be required on paid tools.",
+          acceptRequired: "application/json, text/event-stream",
+          curlExample:
+            `curl -sS -X POST '${base}${config.mcpPath}' ` +
+            `-H 'Content-Type: application/json' ` +
+            `-H 'Accept: application/json, text/event-stream' ` +
+            `-d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}'`,
+          note:
+            "MCP is a façade over the same pricing services; USDC payment may be required on paid tools. " +
+            "Every POST to the MCP path must send Accept: application/json, text/event-stream.",
         }
       : { enabled: false },
     freeTier: {
@@ -426,6 +442,18 @@ export function buildServiceCard(config: AppConfig) {
       windowMs: config.freeTierWindowMs,
     },
     iconUrl: `${base}/favicon.ico`,
+    links: {
+      health: `${base}/health`,
+      capabilities: `${base}/v1/capabilities`,
+      openapi: `${base}/openapi.json`,
+      llmsTxt: `${base}/llms.txt`,
+      wellKnown: `${base}/.well-known/x402.json`,
+      agentCard: `${base}/.well-known/agent-card.json`,
+      mcp: config.mcpEnabled ? `${base}${config.mcpPath}` : undefined,
+      freeDemo: config.freeDemoEnabled
+        ? `${base}/v1/demo/option-price`
+        : undefined,
+    },
     settlement: {
       // Public discovery: network ids + asset labels only — never payTo wallets.
       // Full payTo + asset contract + EIP-712 extra appear only in HTTP 402.
@@ -449,6 +477,12 @@ export function buildServiceCard(config: AppConfig) {
           method: "GET",
           path: "/health",
           description: "Liveness and active network/pricing snapshot",
+        },
+        {
+          method: "GET",
+          path: "/v1/capabilities",
+          description:
+            "Machine matrix: models, greek units, limits, networks, prices, MCP map (free)",
         },
         {
           method: "GET",
@@ -675,6 +709,7 @@ export function buildWellKnownX402(config: AppConfig) {
     links: {
       serviceCard: `${base}/`,
       health: `${base}/health`,
+      capabilities: `${base}/v1/capabilities`,
       wellKnown: `${base}/.well-known/x402.json`,
       agent: `${base}/.well-known/agent.json`,
       agentCard: `${base}/.well-known/agent-card.json`,

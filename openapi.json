@@ -63,6 +63,31 @@
         }
       }
     },
+    "/v1/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Fetch the machine capabilities matrix",
+        "description": "Models, greek units, limits, live networks, prices, MCP tool map. Free — no payment required. No wallets.",
+        "security": [],
+        "x-free": true,
+        "responses": {
+          "200": {
+            "description": "Capabilities matrix",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",

@@ -55,8 +55,9 @@ const optionToolSchema = {
   spot: z
     .number()
     .positive()
+    .optional()
     .describe(
-      "Underlying S (>0). Equity spot or power/commodity forward mark for the option window.",
+      "Underlying S (>0). Required for model=bsm; optional for black76 if forward set.",
     ),
   strike: z.number().positive().describe("Strike K (>0)"),
   timeToExpiry: z
@@ -72,12 +73,27 @@ const optionToolSchema = {
     .nonnegative()
     .optional()
     .default(0)
-    .describe("Continuous yield q (default 0)"),
+    .describe("Continuous yield q (default 0; must be 0 for black76)"),
   optionStyle: z
     .enum(["european", "american"])
     .optional()
     .default("european")
-    .describe('Exercise style (default "european")'),
+    .describe('Exercise style (default "european"; black76 is european-only)'),
+  model: z
+    .enum(["bsm", "black76"])
+    .optional()
+    .default("bsm")
+    .describe('bsm (spot BSM, default) or black76 (forward/futures)'),
+  forward: z
+    .number()
+    .positive()
+    .optional()
+    .describe("Forward F for model=black76 (else spot used as F)"),
+  greekConvention: z
+    .enum(["raw", "trading"])
+    .optional()
+    .default("raw")
+    .describe("raw: vega/1.0 vol, theta/year, rho/1.0 rate; trading: 1%/day/bp"),
   forwardStart: z
     .string()
     .datetime({ offset: true })
@@ -328,6 +344,16 @@ export async function createDerivativesMcpServer(
             : null,
         },
         mcpTools: [...MCP_ALL_TOOL_NAMES],
+        mcp: {
+          path: config.mcpPath,
+          transport: "streamable-http-stateless",
+          acceptRequired: "application/json, text/event-stream",
+          curlExample:
+            `curl -sS -X POST '${base}${config.mcpPath}' ` +
+            `-H 'Content-Type: application/json' ` +
+            `-H 'Accept: application/json, text/event-stream' ` +
+            `-d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}'`,
+        },
         links: {
           serviceCard: `${base}/`,
           openapi: `${base}/openapi.json`,
@@ -340,12 +366,12 @@ export async function createDerivativesMcpServer(
             : null,
           mcp: `${base}${config.mcpPath}`,
         },
-        payment:
-          "Paid tools may require USDC exact on Solana and/or Base via x402. No API keys.",
+        payment: `Paid tools may require USDC exact on configured networks (${config.networks.join(", ")}) via x402. No API keys.`,
         notes: [
+          "MCP Streamable HTTP requires Accept: application/json, text/event-stream on every POST /mcp.",
           "European BSM (default) or American CRR binomial; optional forwardStart/expiration window (ACT/365.25).",
           "Not a swing/multi-exercise engine. No local-vol PDE.",
-          "European Greeks analytic; American Greeks finite-difference.",
+          "European Greeks analytic; American Greeks finite-difference. Units: vega per 1.0 vol, theta per year, rho per 1.0 rate (raw).",
         ],
       };
       return jsonResult(body);
@@ -356,9 +382,10 @@ export async function createDerivativesMcpServer(
     {
       name: "price_option",
       description: [
-        "Price a European (BSM) or American (CRR) option and return Greeks.",
-        "Optional forwardStart/expiration ISO-8601 window: vol accrues only in τ = years(effectiveStart, expiration), not calendar time from purchase.",
-        "When to call: model inputs (spot/forward mark, strike, T or timestamps, r, σ, call/put, optionStyle).",
+        "Price a European BSM, Black-76 (forward), or American CRR option and return Greeks.",
+        "model=bsm (default) or black76; greekConvention=raw (vega/1.0 vol, theta/year, rho/1.0 rate) or trading (vega/1%, theta/day, rho/bp).",
+        "Optional forwardStart/expiration ISO-8601 window: vol accrues only in τ = years(effectiveStart, expiration).",
+        "When to call: model inputs (spot or forward, strike, T, r, σ, call/put, optionStyle).",
         "NOT for: swing/multi-exercise, barrier/local-vol PDE, or inverting premiums (use implied_vol).",
         `Payment: ${config.priceDollarString} USDC exact may be required.`,
         "Same engine as POST /v1/option/price.",
@@ -366,7 +393,7 @@ export async function createDerivativesMcpServer(
       schema: optionToolSchema,
       price: config.priceDollarString,
       serviceName: "Option Price+Greeks",
-      tags: ["options", "greeks", "usdc"],
+      tags: ["mark", "hedge_greeks", "usdc"],
       resourceDescription:
         "European BSM or American CRR fair value + Greeks for AI risk agents",
       discoveryDescription:
@@ -384,7 +411,7 @@ export async function createDerivativesMcpServer(
         expiration: { type: "string" },
         treeSteps: { type: "integer" },
       },
-      required: ["spot", "strike", "rate", "volatility", "optionType"],
+      required: ["strike", "rate", "volatility", "optionType"],
       example: OPTION_EXAMPLE_INPUT,
       handler: (args) =>
         priceOptionDispatch(
@@ -397,6 +424,9 @@ export async function createDerivativesMcpServer(
             optionType: args.optionType,
             dividendYield: args.dividendYield ?? 0,
             optionStyle: args.optionStyle,
+            model: args.model,
+            forward: args.forward,
+            greekConvention: args.greekConvention,
             forwardStart: args.forwardStart,
             expiration: args.expiration,
             treeSteps: args.treeSteps,
@@ -408,6 +438,7 @@ export async function createDerivativesMcpServer(
       name: "implied_vol",
       description: [
         "Solve implied volatility from a single market premium (European BSM or American CRR), then return σ̂ and Greeks.",
+        "Greek units (raw): vega per 1.0 vol, theta per year, rho per 1.0 rate.",
         "When to call: one quote (premium known); not a full book.",
         "Markets: equity or commodity/power forward mark as underlying.",
         "NOT for: multi-quote surfaces (use implied_vol_surface) or local-vol calibration.",
@@ -417,7 +448,7 @@ export async function createDerivativesMcpServer(
       schema: impliedVolToolSchema,
       price: config.priceImpliedVolDollarString,
       serviceName: "Single IV Solver",
-      tags: ["options", "implied-vol", "usdc"],
+      tags: ["iv_calib", "mark", "usdc"],
       resourceDescription: "Implied vol from one market premium + Greeks",
       discoveryDescription:
         "Solve σ̂ from one premium + Greeks. USDC may be required.",

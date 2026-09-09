@@ -1,4 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
+import {
+  buildAccessLogLine,
+  classifyPayment,
+  networkFromPaymentResponseHeader,
+} from "./accessLog.js";
+import {
+  getRequestId,
+  type RequestWithId,
+} from "./security.js";
 
 function isPlainEmptyObject(body: unknown): boolean {
   return (
@@ -10,8 +19,9 @@ function isPlainEmptyObject(body: unknown): boolean {
 }
 
 /**
- * Request logging + enrich empty x402 402 bodies so clients that only print
- * the JSON body still see a useful message (PAYMENT-REQUIRED remains in headers).
+ * Request logging:
+ * - Enrich empty x402 402 JSON bodies for DX (no payTo in body).
+ * - Emit one structured JSON access line on response finish (Flow-joinable).
  */
 export function requestLogMiddleware(
   req: Request,
@@ -23,7 +33,6 @@ export function requestLogMiddleware(
 
   res.json = ((body: unknown) => {
     const status = res.statusCode || 200;
-    const ms = Date.now() - start;
 
     // x402 middleware often sends res.status(402).json({}) — enrich for DX
     if (status === 402 && isPlainEmptyObject(body)) {
@@ -36,26 +45,59 @@ export function requestLogMiddleware(
       };
     }
 
-    if (status >= 500) {
-      console.error(
-        `[http] ${req.method} ${req.path} → ${status} ${ms}ms`,
-        body,
-      );
-    } else if (status >= 400) {
-      console.warn(
-        `[http] ${req.method} ${req.path} → ${status} ${ms}ms`,
-        typeof body === "object" && body && "error" in body
-          ? (body as { error: string }).error
-          : "",
-      );
-    } else {
-      const ob =
-        res.locals.optionBookClient === true ? " optionbook_client=yes" : "";
-      console.log(`[http] ${req.method} ${req.path} → ${status} ${ms}ms${ob}`);
-    }
-
     return originalJson(body);
   }) as Response["json"];
+
+  res.on("finish", () => {
+    const status = res.statusCode || 0;
+    const ms = Date.now() - start;
+    const requestId = getRequestId(req as unknown as RequestWithId);
+    const paymentHeader = res.getHeader("PAYMENT-RESPONSE") ??
+      res.getHeader("payment-response") ??
+      res.getHeader("X-PAYMENT-RESPONSE") ??
+      res.getHeader("x-payment-response");
+    const hasPaymentResponse = Boolean(
+      (typeof paymentHeader === "string" && paymentHeader.length > 0) ||
+        (Array.isArray(paymentHeader) && paymentHeader.length > 0),
+    );
+
+    const payment = classifyPayment({
+      status,
+      path: req.path,
+      method: req.method,
+      hasPaymentResponse,
+    });
+
+    const network =
+      payment === "settled" ? networkFromPaymentResponseHeader(res) : null;
+
+    const uaRaw = req.get("user-agent");
+    const uaApp =
+      typeof uaRaw === "string" && uaRaw.trim().length > 0
+        ? uaRaw.trim().slice(0, 256)
+        : null;
+
+    const line = buildAccessLogLine({
+      requestId,
+      method: req.method,
+      path: req.path,
+      status,
+      ms,
+      payment,
+      network,
+      uaApp,
+    });
+
+    // Single JSON line — join Railway Network Flow on requestId
+    const payload = JSON.stringify(line);
+    if (status >= 500) {
+      console.error(payload);
+    } else if (status >= 400) {
+      console.warn(payload);
+    } else {
+      console.log(payload);
+    }
+  });
 
   next();
 }

@@ -51,16 +51,32 @@ describe("MCP Streamable HTTP smoke", () => {
     expect(res.status).toBe(406);
     const body = (await res.json()) as {
       jsonrpc: string;
-      error: { code: number; message: string; data?: { hint?: string; path?: string; docs?: string } };
+      error: {
+        code: number;
+        message: string;
+        data?: {
+          hint?: string;
+          path?: string;
+          docs?: string;
+          acceptRequired?: string;
+          curlExample?: string;
+        };
+      };
       id: null;
     };
     expect(body.jsonrpc).toBe("2.0");
     expect(body.id).toBeNull();
     expect(body.error.code).toBe(-32000);
     expect(body.error.message).toMatch(/Not Acceptable/i);
-    expect(body.error.data?.hint).toMatch(/Retry initialize/i);
+    expect(body.error.message).toMatch(/application\/json,\s*text\/event-stream/);
+    expect(body.error.data?.hint).toMatch(/Accept:/i);
+    expect(body.error.data?.acceptRequired).toBe(
+      "application/json, text/event-stream",
+    );
     expect(body.error.data?.path).toBe(config.mcpPath);
     expect(body.error.data?.docs).toContain("/llms.txt");
+    expect(body.error.data?.curlExample).toMatch(/Accept: application\/json, text\/event-stream/);
+    expect(body.error.data?.curlExample).toMatch(/method":"initialize"/);
   });
 
   it("POST /mcp is mounted and responds (JSON-RPC envelope)", async () => {

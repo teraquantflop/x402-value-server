@@ -21,6 +21,7 @@ import {
 } from "./middleware/deferredJson.js";
 import { requestLogMiddleware } from "./middleware/requestLog.js";
 import { healthRouter } from "./routes/health.js";
+import { capabilitiesRouter } from "./routes/capabilities.js";
 import {
   wellKnownRouter,
   sendWellKnownAgent,
@@ -50,6 +51,7 @@ import {
 } from "./x402/routeConfig.js";
 import {
   allowPostOnPaidHead,
+  createPaidGetRouter,
   createPaidHeadRouter,
 } from "./routes/paidHead.js";
 import { mountMcpRoutes } from "./mcp/http.js";
@@ -80,6 +82,7 @@ function mountFreeDiscoveryRoutes(app: Express): void {
   app.use(llmsTxtRouter);
   app.use(skillMdRouter);
   app.use(healthRouter);
+  app.use(capabilitiesRouter);
   app.use(staticAssetsRouter);
 
   if (config.freeDemoEnabled) {
@@ -161,6 +164,8 @@ export function createApp(): Express {
 
   // HEAD stubs: no compute (only reached if payment gate skipped / cleared)
   app.use(createPaidHeadRouter(paidPaths));
+  // GET on paid paths: 405 + Allow: POST (not bare 404; not in x402 route map)
+  app.use(createPaidGetRouter(paidPaths));
 
   // Paid handlers: Zod validation only runs after payment gate above
   app.use(optionRouter);

@@ -1,8 +1,8 @@
 /**
- * HEAD stubs for paid paths (no pricing / IV / settle).
- * Unpaid HEAD is answered 402 by x402 paymentMiddleware when HEAD routes are
- * registered via withHeadChallenges. These handlers only run if payment is
- * skipped or a client somehow clears the gate — still no model work.
+ * HEAD / GET helpers for paid paths (no pricing / IV / settle).
+ * - Unpaid HEAD → 402 via x402 paymentMiddleware (withHeadChallenges).
+ * - GET → 405 + Allow: POST (not a bare 404; not a payable GET).
+ * HEAD stubs below only run if payment is skipped / cleared.
  */
 import { Router, type Request, type Response } from "express";
 
@@ -12,6 +12,27 @@ export function createPaidHeadRouter(paths: string[]): Router {
     router.head(path, (_req: Request, res: Response) => {
       res.setHeader("Allow", "POST");
       res.status(204).end();
+    });
+  }
+  return router;
+}
+
+/** GET on paid POST-only routes: 405 + Allow: POST (scanner-friendly). */
+export function createPaidGetRouter(paths: string[]): Router {
+  const router = Router();
+  for (const path of paths) {
+    router.get(path, (req: Request, res: Response) => {
+      res
+        .status(405)
+        .setHeader("Allow", "POST")
+        .type("application/json")
+        .json({
+          error: "method_not_allowed",
+          message: "This route accepts POST only (x402 USDC exact). Use POST.",
+          method: req.method,
+          path,
+          allow: ["POST"],
+        });
     });
   }
   return router;

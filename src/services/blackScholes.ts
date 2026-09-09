@@ -202,6 +202,7 @@ export function priceWithGreeks(
     optionStyle: "european",
     timeline,
     greeksQuality: "analytic",
+    greekConvention: "raw",
     units: { ...UNITS },
     requestId,
     computedAt,

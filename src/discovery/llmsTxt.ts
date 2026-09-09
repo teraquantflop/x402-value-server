@@ -3,7 +3,7 @@
  * Convention: H1 + blockquote summary + sections with links.
  */
 import type { AppConfig } from "../types.js";
-import { SERVICE_CATALOG } from "./catalog.js";
+import { SERVICE_CATALOG, networksPhrase } from "./catalog.js";
 
 function abs(base: string, path: string): string {
   const root = base.replace(/\/$/, "");
@@ -18,11 +18,12 @@ export function buildLlmsTxt(config: AppConfig): string {
   const base = config.publicBaseUrl.replace(/\/$/, "");
   const networks = config.networks.join(", ");
   const networkIds = config.networkIds.join(", ");
+  const netsHuman = networksPhrase(config);
 
   const lines: string[] = [
     `# ${SERVICE_CATALOG.productName}`,
     "",
-    `> ${SERVICE_CATALOG.tagline} Settle **USDC** via HTTP 402 (x402 exact) on **Solana and/or Base** — no API keys.`,
+    `> ${SERVICE_CATALOG.tagline} Settle **USDC** via HTTP 402 (x402 exact) on **${netsHuman}** — no API keys.`,
     "",
     "## What this service does (English)",
     "",
@@ -84,6 +85,7 @@ export function buildLlmsTxt(config: AppConfig): string {
     "## Free discovery",
     "",
     `- [Service card (JSON)](${abs(base, "/")})`,
+    `- [Capabilities matrix](${abs(base, "/v1/capabilities")}) — models, greek units, caps, networks, prices`,
     `- [Health](${abs(base, "/health")})`,
     `- [OpenAPI](${abs(base, "/openapi.json")})`,
     `- [Swagger alias](${abs(base, "/swagger.json")}) — same as OpenAPI`,
@@ -102,6 +104,8 @@ export function buildLlmsTxt(config: AppConfig): string {
   if (config.mcpEnabled) {
     lines.push(
       `- [MCP Streamable HTTP](${abs(base, config.mcpPath)}) — tools: \`service_info\` (free), \`price_option\`, \`implied_vol\`, \`implied_vol_surface\`, \`price_from_surface\`, \`scenario_from_surface\`, \`portfolio_greeks\`, \`portfolio_scenario\``,
+      `- **MCP Accept (required):** \`Accept: application/json, text/event-stream\` on every \`POST ${config.mcpPath}\` (missing → HTTP 406).`,
+      `- **MCP initialize curl:** \`curl -sS -X POST '${base}${config.mcpPath}' -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}'\``,
     );
   }
 
@@ -122,7 +126,7 @@ export function buildLlmsTxt(config: AppConfig): string {
     "",
     "1. Discover via this file, `GET /`, or `GET /.well-known/x402.json`.",
     "2. Optional: hit free demo to validate JSON shape without a wallet.",
-    "3. `POST` paid path unpaid → parse `PAYMENT-REQUIRED` accepts (Solana and/or Base).",
+    `3. \`POST\` paid path unpaid → parse \`PAYMENT-REQUIRED\` accepts (any listed network: ${netsHuman}).`,
     "4. Settle USDC; retry with payment proof. Optional `Idempotency-Key`.",
     "5. MCP hosts: connect to the MCP URL; paid tools may require USDC the same way.",
     "",

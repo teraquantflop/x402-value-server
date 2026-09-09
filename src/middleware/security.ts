@@ -57,18 +57,30 @@ export type RequestWithId = {
   header(name: string): string | undefined;
 };
 
-/** Attach a short request id for log correlation. */
+/**
+ * Attach a request id for log correlation with Railway Network Flow.
+ * Prefer x-railway-request-id (Flow.requestId), then x-request-id, else UUID.
+ * Always echo as X-Request-Id so app logs join Flow on requestId.
+ */
 export const requestIdMiddleware: RequestHandler = (req, res, next) => {
-  const incoming = req.header("x-request-id");
+  const railway = req.header("x-railway-request-id")?.trim();
+  const incoming = req.header("x-request-id")?.trim();
   const id =
-    incoming && incoming.length <= 128
-      ? incoming
-      : crypto.randomUUID();
+    railway && railway.length > 0 && railway.length <= 128
+      ? railway
+      : incoming && incoming.length > 0 && incoming.length <= 128
+        ? incoming
+        : crypto.randomUUID();
   res.setHeader("X-Request-Id", id);
   (req as unknown as RequestWithId).requestId = id;
   next();
 };
 
 export function getRequestId(req: RequestWithId): string {
-  return req.requestId ?? req.header("x-request-id") ?? crypto.randomUUID();
+  return (
+    req.requestId ??
+    req.header("x-railway-request-id") ??
+    req.header("x-request-id") ??
+    crypto.randomUUID()
+  );
 }

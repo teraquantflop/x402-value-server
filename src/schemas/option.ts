@@ -23,7 +23,12 @@ const finiteNumber = z
 
 export const optionInputSchema = z
   .object({
-    spot: finitePositive.describe("Current underlying price S"),
+    spot: finitePositive
+      .optional()
+      .describe("Underlying spot S (required for model=bsm; optional for black76 if forward set)"),
+    forward: finitePositive
+      .optional()
+      .describe("Forward mark F for model=black76 (preferred); if omitted, spot is used as F"),
     strike: finitePositive.describe("Strike price K"),
     timeToExpiry: optionalTimeToExpirySchema,
     rate: finiteNumber.describe("Continuously compounded risk-free rate r"),
@@ -32,8 +37,18 @@ export const optionInputSchema = z
     dividendYield: finiteNonNegative
       .optional()
       .default(0)
-      .describe("Continuous dividend yield q (default 0)"),
+      .describe("Continuous dividend yield q (default 0; must be 0 for black76)"),
     optionStyle: optionStyleSchema,
+    model: z
+      .enum(["bsm", "black76"])
+      .default("bsm")
+      .describe('Pricing model: "bsm" (default European BSM on spot) or "black76" (forward/futures)'),
+    greekConvention: z
+      .enum(["raw", "trading"])
+      .default("raw")
+      .describe(
+        'Greek units: "raw" (vega/1.0 vol, theta/year, rho/1.0 rate) or "trading" (vega/1%, theta/day, rho/bp)',
+      ),
     forwardStart: isoDateTimeSchema
       .optional()
       .describe(
@@ -47,7 +62,42 @@ export const optionInputSchema = z
     treeSteps: treeStepsSchema.optional(),
   })
   .strict()
-  .superRefine(refineOptionTimeline);
+  .superRefine(refineOptionTimeline)
+  .superRefine((data, ctx) => {
+    const model = data.model ?? "bsm";
+    if (model === "bsm") {
+      if (data.spot === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "spot is required when model is bsm",
+          path: ["spot"],
+        });
+      }
+    } else {
+      // black76
+      if (data.spot === undefined && data.forward === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "forward or spot is required when model is black76",
+          path: ["forward"],
+        });
+      }
+      if ((data.dividendYield ?? 0) !== 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "dividendYield must be 0 (or omitted) for model=black76",
+          path: ["dividendYield"],
+        });
+      }
+      if ((data.optionStyle ?? "european") === "american") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "model=black76 supports european only (use bsm + american for CRR)",
+          path: ["optionStyle"],
+        });
+      }
+    }
+  });
 
 export type OptionInputBody = z.infer<typeof optionInputSchema>;
 
@@ -99,7 +149,12 @@ export const OPTION_EXAMPLE_OUTPUT = {
     theta: -6.41402764,
     rho: 53.23248343,
   },
-  inputs: { ...OPTION_EXAMPLE_INPUT, optionStyle: "european" as const },
+  inputs: {
+    ...OPTION_EXAMPLE_INPUT,
+    optionStyle: "european" as const,
+    model: "bsm" as const,
+    greekConvention: "raw" as const,
+  },
   model: "black-scholes-merton" as const,
   optionStyle: "european" as const,
   timeline: {
@@ -111,10 +166,11 @@ export const OPTION_EXAMPLE_OUTPUT = {
     yearBasis: "ACT/365.25" as const,
   },
   greeksQuality: "analytic" as const,
+  greekConvention: "raw" as const,
   units: {
-    price: "option value in spot currency units",
-    delta: "dV/dS (share equivalent)",
-    gamma: "d²V/dS²",
+    price: "option value in spot/forward currency units",
+    delta: "dV/dS or dV/dF (share / forward equivalent)",
+    gamma: "d²V/dS² or d²V/dF²",
     vega: "dV/dσ per 1.0 absolute volatility (not per 1%)",
     theta: "dV/dT per year (not per day)",
     rho: "dV/dr per 1.0 absolute rate (not per 1%)",

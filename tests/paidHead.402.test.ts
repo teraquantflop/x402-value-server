@@ -165,11 +165,17 @@ describe("HEAD paid routes → 402 (HTTP)", () => {
     expect(paymentRequiredHeader(res)).toBeTruthy();
   });
 
-  it("GET /v1/option/price is not a 200 price response", async () => {
-    const res = await fetch(`${baseUrl}/v1/option/price`, { method: "GET" });
-    expect(res.status).not.toBe(200);
-    if (res.status === 200) {
-      const body = (await res.json()) as { price?: unknown };
+  it("GET on paid paths returns 405 Allow POST (not bare 404)", async () => {
+    for (const path of [
+      "/v1/option/price",
+      "/v1/volatility/surface",
+      "/v1/portfolio/scenario",
+    ]) {
+      const res = await fetch(`${baseUrl}${path}`, { method: "GET" });
+      expect(res.status).toBe(405);
+      expect((res.headers.get("allow") ?? "").toUpperCase()).toContain("POST");
+      const body = (await res.json()) as { error?: string; price?: unknown };
+      expect(body.error).toBe("method_not_allowed");
       expect(body.price).toBeUndefined();
     }
   });

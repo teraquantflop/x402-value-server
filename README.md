@@ -306,7 +306,9 @@ Use these for crawlers/agents that look for a well-known x402 file. Prefer `/.we
 
 **Model notes**
 
-- **European** (default): Black-Scholes-Merton with continuous dividend yield; analytic Greeks
+- **European** (default `model=bsm`): Black-Scholes-Merton with continuous dividend yield; analytic Greeks
+- **Black-76** (`model=black76`): futures/forward options on mark **F** (`forward` preferred, else `spot` as F); `dividendYield` must be 0; european only
+- **`greekConvention`**: `raw` (default — vega per 1.0 vol, theta per year, rho per 1.0 rate) or `trading` (vega per 1%, theta per day, rho per bp)
 - **American**: Cox–Ross–Rubinstein binomial with early exercise; Greeks via finite difference (`greeksQuality: "finite-difference"`)
 - **Forward-start / window**: vol and exercise rights live in \([\mathrm{effectiveStart},\mathrm{expiration}]\) where `effectiveStart = max(forwardStart, now)`. Model \(\tau\) = ACT/365.25 years in that window — **not** calendar time from purchase. Spot is the client mark (no extra PV discount now→forwardStart in v1).
 - **Not** a swing / multi-exercise engine (single American exercise over the window)
@@ -708,6 +710,23 @@ openapi.json · PAY.md
 | `npm start` | Run compiled server |
 | `npm test` | Unit tests (pricing + validation) |
 | `npm run client` | Paid/unpaid smoke client |
+
+## Observability (Railway Network Flow join)
+
+Each request emits **one JSON access line** on stdout, e.g.:
+
+```json
+{"ts":"…","requestId":"gX3fuhG_S0Ow-jJUn6XIxQ","method":"GET","path":"/","status":200,"ms":7,"payment":"free","network":null,"uaApp":"…"}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `requestId` | Same value as response `X-Request-Id`. Prefer inbound `x-railway-request-id`, else `x-request-id`, else a generated UUID. |
+| `payment` | `free` \| `challenge` (HTTP 402) \| `settled` (paid 2xx with payment-response) \| `other` |
+| `network` | Settlement CAIP-2 when known on settle; else `null` |
+| `uaApp` | Optional inbound `User-Agent` hint only |
+
+**Join to Railway Network Flow:** match Flow.`requestId` ↔ app log `requestId`. Flow.`clientUa` is the **source of truth** for user-agent (HTTP/deploy logs may omit UA). Do not treat `uaApp` as authoritative. Logs never include wallets, payTo, or payment proofs.
 
 ## Deploy (Railway)
 
