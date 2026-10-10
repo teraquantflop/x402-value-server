@@ -255,6 +255,27 @@ export const optionInputJsonSchema = {
       maximum: 500,
       description: "CRR steps for American (default 200 on single price).",
     },
+    forward: {
+      type: "number",
+      description:
+        "Forward mark F for model=black76 (preferred). If omitted, spot is used as F.",
+      exclusiveMinimum: 0,
+      examples: [100, 82.5],
+    },
+    model: {
+      type: "string",
+      enum: ["bsm", "black76"],
+      default: "bsm",
+      description:
+        'Pricing model: "bsm" (default European BSM on spot) or "black76" (forward/futures).',
+    },
+    greekConvention: {
+      type: "string",
+      enum: ["raw", "trading"],
+      default: "raw",
+      description:
+        'Greek units: "raw" (vega/1.0 vol, theta/year, rho/1.0 rate) or "trading" (vega/1%, theta/day, rho/bp).',
+    },
   },
   required: ["spot", "strike", "rate", "volatility", "optionType"],
   additionalProperties: false,

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Router, type Request, type Response } from "express";
+import { config } from "../config.js";
+import { enrichOpenApiDocument } from "./openapiEnrich.js";
 
 /**
  * Load openapi.json once at process start.
@@ -31,7 +33,17 @@ function loadOpenApiDocument(): unknown {
   );
 }
 
-const openApiDocument = loadOpenApiDocument();
+const openApiDocumentRaw = loadOpenApiDocument();
+
+/** Enriched OpenAPI (inline paid requestBody schemas + x-payment-info). */
+export function getOpenApiDocument(): unknown {
+  return enrichOpenApiDocument(openApiDocumentRaw, config, {
+    cdpEnabled: config.cdpConfigured,
+  });
+}
+
+/** Snapshot used by unit tests; same enrichment as GET /openapi.json. */
+export const openApiDocument = getOpenApiDocument();
 
 export const openapiRouter = Router();
 
@@ -40,12 +52,12 @@ function sendOpenApi(_req: Request, res: Response): void {
     .status(200)
     .type("application/json")
     .setHeader("Cache-Control", "public, max-age=300")
-    .json(openApiDocument);
+    .json(getOpenApiDocument());
 }
 
 openapiRouter.get("/openapi.json", sendOpenApi);
-/** Alias — same OpenAPI document (source of truth remains openapi.json). */
+/** Alias — same OpenAPI document (source of truth remains openapi.json + enrich). */
 openapiRouter.get("/swagger.json", sendOpenApi);
 
 /** Shared handler for explicit app.get registration. */
-export { sendOpenApi, openApiDocument };
+export { sendOpenApi };

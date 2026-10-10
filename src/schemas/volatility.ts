@@ -216,6 +216,29 @@ export const volatilitySurfaceInputJsonSchema = {
       minimum: 0,
       examples: [0, 0.01],
     },
+    optionStyle: {
+      type: "string",
+      enum: ["european", "american"],
+      default: "european",
+      description: 'Exercise style for IV solve (default "european").',
+    },
+    forwardStart: {
+      type: "string",
+      format: "date-time",
+      description: "Shared ISO-8601 window start for all rows (optional).",
+    },
+    expiration: {
+      type: "string",
+      format: "date-time",
+      description:
+        "Shared ISO-8601 window end for all rows. When set, all rows share derived τ.",
+    },
+    treeSteps: {
+      type: "integer",
+      minimum: 50,
+      maximum: 500,
+      description: "CRR steps when optionStyle is american.",
+    },
     options: {
       type: "array",
       description:

@@ -50,6 +50,45 @@ import { scenarioFromSurface } from "../services/scenarioFromSurface.js";
 
 import { settlementNetworkIds } from "./settlementNetworks.js";
 
+/** Stock HTTP-body bazaar: info.input envelope + schema.properties.input.properties.body. */
+function bodyDiscovery(opts: {
+  input: Record<string, unknown>;
+  inputSchema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: readonly string[] | string[];
+    [key: string]: unknown;
+  };
+  outputExample: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+}) {
+  // method is omitted at declare time; stock enrichDeclaration injects POST.
+  return declareDiscoveryExtension({
+    bodyType: "json",
+    input: opts.input,
+    inputSchema: {
+      type: "object",
+      properties: opts.inputSchema.properties as Record<string, unknown>,
+      required: opts.inputSchema.required
+        ? [...opts.inputSchema.required]
+        : undefined,
+      ...(opts.inputSchema.additionalProperties !== undefined
+        ? { additionalProperties: opts.inputSchema.additionalProperties }
+        : {}),
+      ...(typeof opts.inputSchema.title === "string"
+        ? { title: opts.inputSchema.title }
+        : {}),
+      ...(typeof opts.inputSchema.description === "string"
+        ? { description: opts.inputSchema.description }
+        : {}),
+    },
+    output: {
+      example: opts.outputExample,
+      schema: opts.outputSchema,
+    },
+  });
+}
+
 export type BuildPaidRoutesOptions = {
   /** Base mainnet accepts only when CDP is enabled (never against PayAI). */
   cdpEnabled: boolean;
@@ -157,21 +196,11 @@ export function buildPaidRoutes(
       serviceName: optionMeta.serviceName,
       tags: optionMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
-          // Equity ATM primary example; power-style documented in schema description
+        ...bodyDiscovery({
           input: OPTION_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: optionInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...optionInputJsonSchema.required],
-          },
-          output: {
-            example: OPTION_EXAMPLE_OUTPUT,
-            schema: optionOutputJsonSchema as Record<string, unknown>,
-          },
+          inputSchema: optionInputJsonSchema,
+          outputExample: OPTION_EXAMPLE_OUTPUT,
+          outputSchema: optionOutputJsonSchema as Record<string, unknown>,
         }),
       },
     },
@@ -183,20 +212,11 @@ export function buildPaidRoutes(
       serviceName: ivMeta.serviceName,
       tags: ivMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
+        ...bodyDiscovery({
           input: IMPLIED_VOL_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: impliedVolInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...impliedVolInputJsonSchema.required],
-          },
-          output: {
-            example: IMPLIED_VOL_EXAMPLE_OUTPUT,
-            schema: impliedVolOutputJsonSchema as Record<string, unknown>,
-          },
+          inputSchema: impliedVolInputJsonSchema,
+          outputExample: IMPLIED_VOL_EXAMPLE_OUTPUT,
+          outputSchema: impliedVolOutputJsonSchema as Record<string, unknown>,
         }),
       },
     },
@@ -208,23 +228,14 @@ export function buildPaidRoutes(
       serviceName: surfaceMeta.serviceName,
       tags: surfaceMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
+        ...bodyDiscovery({
           input: VOL_SURFACE_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: volatilitySurfaceInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...volatilitySurfaceInputJsonSchema.required],
-          },
-          output: {
-            example: VOL_SURFACE_EXAMPLE_OUTPUT,
-            schema: volatilitySurfaceOutputJsonSchema as Record<
-              string,
-              unknown
-            >,
-          },
+          inputSchema: volatilitySurfaceInputJsonSchema,
+          outputExample: VOL_SURFACE_EXAMPLE_OUTPUT,
+          outputSchema: volatilitySurfaceOutputJsonSchema as Record<
+            string,
+            unknown
+          >,
         }),
       },
     },
@@ -236,20 +247,14 @@ export function buildPaidRoutes(
       serviceName: portfolioMeta.serviceName,
       tags: portfolioMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
+        ...bodyDiscovery({
           input: PORTFOLIO_GREEKS_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: portfolioGreeksInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...portfolioGreeksInputJsonSchema.required],
-          },
-          output: {
-            example: portfolioGreeksOut,
-            schema: portfolioGreeksOutputJsonSchema as Record<string, unknown>,
-          },
+          inputSchema: portfolioGreeksInputJsonSchema,
+          outputExample: portfolioGreeksOut,
+          outputSchema: portfolioGreeksOutputJsonSchema as Record<
+            string,
+            unknown
+          >,
         }),
       },
     },
@@ -261,23 +266,14 @@ export function buildPaidRoutes(
       serviceName: scenarioMeta.serviceName,
       tags: scenarioMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
+        ...bodyDiscovery({
           input: PORTFOLIO_SCENARIO_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: portfolioScenarioInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...portfolioScenarioInputJsonSchema.required],
-          },
-          output: {
-            example: portfolioScenarioOut,
-            schema: portfolioScenarioOutputJsonSchema as Record<
-              string,
-              unknown
-            >,
-          },
+          inputSchema: portfolioScenarioInputJsonSchema,
+          outputExample: portfolioScenarioOut,
+          outputSchema: portfolioScenarioOutputJsonSchema as Record<
+            string,
+            unknown
+          >,
         }),
       },
     },
@@ -289,20 +285,14 @@ export function buildPaidRoutes(
       serviceName: priceSurfMeta.serviceName,
       tags: priceSurfMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
+        ...bodyDiscovery({
           input: SURFACE_PRICE_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: priceFromSurfaceInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...priceFromSurfaceInputJsonSchema.required],
-          },
-          output: {
-            example: priceFromSurfOut,
-            schema: priceFromSurfaceOutputJsonSchema as Record<string, unknown>,
-          },
+          inputSchema: priceFromSurfaceInputJsonSchema,
+          outputExample: priceFromSurfOut,
+          outputSchema: priceFromSurfaceOutputJsonSchema as Record<
+            string,
+            unknown
+          >,
         }),
       },
     },
@@ -314,23 +304,14 @@ export function buildPaidRoutes(
       serviceName: scenSurfMeta.serviceName,
       tags: scenSurfMeta.tags,
       extensions: {
-        ...declareDiscoveryExtension({
-          bodyType: "json",
+        ...bodyDiscovery({
           input: SURFACE_SCENARIO_EXAMPLE_INPUT,
-          inputSchema: {
-            properties: scenarioFromSurfaceInputJsonSchema.properties as Record<
-              string,
-              unknown
-            >,
-            required: [...scenarioFromSurfaceInputJsonSchema.required],
-          },
-          output: {
-            example: scenarioFromSurfOut,
-            schema: scenarioFromSurfaceOutputJsonSchema as Record<
-              string,
-              unknown
-            >,
-          },
+          inputSchema: scenarioFromSurfaceInputJsonSchema,
+          outputExample: scenarioFromSurfOut,
+          outputSchema: scenarioFromSurfaceOutputJsonSchema as Record<
+            string,
+            unknown
+          >,
         }),
       },
     },

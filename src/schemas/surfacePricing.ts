@@ -215,6 +215,11 @@ export const priceFromSurfaceInputJsonSchema = {
     wingRule: { type: "string", const: "flat_vol" },
     rate: { type: "number" },
     dividendYield: { type: "number", minimum: 0 },
+    optionStyle: {
+      type: "string",
+      enum: ["european", "american"],
+      default: "european",
+    },
     surface: { type: "array", minItems: 1, maxItems: 200 },
     options: { type: "array", minItems: 1, maxItems: 50 },
   },

@@ -187,6 +187,17 @@ const envSchema = z.object({
       const t = (v ?? "").trim();
       return t.length > 0 ? t : undefined;
     }),
+  /**
+   * Optional public contact email for OpenAPI info.contact.email.
+   * Never hardcoded — omit from docs when unset.
+   */
+  CONTACT_EMAIL: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const t = (v ?? "").trim();
+      return t.length > 0 ? t : undefined;
+    }),
 });
 
 function parseNetworks(raw: string): NetworkAlias[] {
@@ -388,6 +399,7 @@ function loadConfig(): AppConfig {
     mcpEnabled: env.MCP_ENABLED !== false,
     mcpPath: env.MCP_PATH,
     optionBookId: env.OPTIONBOOK_ID,
+    contactEmail: env.CONTACT_EMAIL,
     serviceName: "x402-derivatives-desk",
     serviceVersion: "1.6.0",
   };

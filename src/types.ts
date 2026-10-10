@@ -160,6 +160,8 @@ export interface AppConfig {
    * (timing-safe). Undefined/empty disables.
    */
   optionBookId?: string;
+  /** Optional OpenAPI info.contact.email from CONTACT_EMAIL (never hardcoded). */
+  contactEmail?: string;
   serviceName: string;
   serviceVersion: string;
 }

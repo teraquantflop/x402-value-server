@@ -391,7 +391,134 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OptionPriceRequest"
+                "type": "object",
+                "properties": {
+                  "spot": {
+                    "type": "number",
+                    "description": "Underlying price S (> 0). Equity spot OR power/commodity forward mark for the option's window.",
+                    "exclusiveMinimum": 0,
+                    "examples": [
+                      100,
+                      82.5,
+                      45.5
+                    ]
+                  },
+                  "strike": {
+                    "type": "number",
+                    "description": "Strike price K (> 0) in the same units as spot.",
+                    "exclusiveMinimum": 0,
+                    "examples": [
+                      100,
+                      50
+                    ]
+                  },
+                  "timeToExpiry": {
+                    "type": "number",
+                    "description": "Time to expiry T in years (≥ 0). Required unless expiration is set. Mutually exclusive with expiration.",
+                    "minimum": 0,
+                    "examples": [
+                      0.25,
+                      1
+                    ]
+                  },
+                  "rate": {
+                    "type": "number",
+                    "description": "Continuously compounded risk-free rate r (e.g. 0.05 = 5%). For futures-style early exercise set r≈dividendYield.",
+                    "examples": [
+                      0.03,
+                      0.05
+                    ]
+                  },
+                  "volatility": {
+                    "type": "number",
+                    "description": "Annualized volatility σ as a decimal (> 0). Applies over the vol-accrual window τ.",
+                    "exclusiveMinimum": 0,
+                    "examples": [
+                      0.15,
+                      0.2,
+                      0.45
+                    ]
+                  },
+                  "optionType": {
+                    "type": "string",
+                    "enum": [
+                      "call",
+                      "put"
+                    ],
+                    "description": "Call or put."
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "description": "Continuous dividend / convenience / yield q (≥ 0, default 0).",
+                    "minimum": 0,
+                    "examples": [
+                      0,
+                      0.02
+                    ]
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "description": "Exercise style (default \"european\"). American uses CRR binomial with early exercise.",
+                    "default": "european"
+                  },
+                  "forwardStart": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO-8601 start of vol/exercise window. If ≤ now, behaves like plain option to expiration."
+                  },
+                  "expiration": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO-8601 end of vol/exercise window. Mutually exclusive with timeToExpiry."
+                  },
+                  "treeSteps": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 500,
+                    "description": "CRR steps for American (default 200 on single price)."
+                  },
+                  "forward": {
+                    "type": "number",
+                    "description": "Forward mark F for model=black76 (preferred). If omitted, spot is used as F.",
+                    "exclusiveMinimum": 0,
+                    "examples": [
+                      100,
+                      82.5
+                    ]
+                  },
+                  "model": {
+                    "type": "string",
+                    "enum": [
+                      "bsm",
+                      "black76"
+                    ],
+                    "default": "bsm",
+                    "description": "Pricing model: \"bsm\" (default European BSM on spot) or \"black76\" (forward/futures)."
+                  },
+                  "greekConvention": {
+                    "type": "string",
+                    "enum": [
+                      "raw",
+                      "trading"
+                    ],
+                    "default": "raw",
+                    "description": "Greek units: \"raw\" (vega/1.0 vol, theta/year, rho/1.0 rate) or \"trading\" (vega/1%, theta/day, rho/bp)."
+                  }
+                },
+                "required": [
+                  "spot",
+                  "strike",
+                  "rate",
+                  "volatility",
+                  "optionType"
+                ],
+                "additionalProperties": false,
+                "title": "OptionPriceRequest",
+                "description": "European (default) or American option fair value. Legacy bodies use timeToExpiry year-fractions. Optional forwardStart+expiration (ISO-8601 with Z/offset) define a vol/exercise window; τ = years in that window (ACT/365.25), not calendar time from purchase. Not a swing/multi-exercise engine."
               },
               "example": {
                 "spot": 100,
@@ -489,7 +616,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.01",
+          "currency": "USDC"
+        }
       }
     },
     "/v1/option/implied-vol": {
@@ -517,7 +652,76 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ImpliedVolRequest"
+                "type": "object",
+                "properties": {
+                  "underlying": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Underlying price S (> 0)"
+                  },
+                  "strike": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Strike K (> 0)"
+                  },
+                  "timeToExpiry": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Time to expiry in years (xor expiration)"
+                  },
+                  "rate": {
+                    "type": "number",
+                    "description": "Continuous risk-free rate r"
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Continuous yield q (default 0)"
+                  },
+                  "optionType": {
+                    "type": "string",
+                    "enum": [
+                      "call",
+                      "put"
+                    ]
+                  },
+                  "premium": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Observed market premium"
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "default": "european"
+                  },
+                  "forwardStart": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "expiration": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "treeSteps": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 500
+                  }
+                },
+                "required": [
+                  "underlying",
+                  "strike",
+                  "rate",
+                  "optionType",
+                  "premium"
+                ],
+                "additionalProperties": false,
+                "title": "ImpliedVolRequest",
+                "description": "Solve implied volatility from a single market premium (European BSM or American CRR)."
               },
               "example": {
                 "underlying": 100,
@@ -620,7 +824,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.03",
+          "currency": "USDC"
+        }
       }
     },
     "/v1/volatility/surface": {
@@ -648,7 +860,115 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VolatilitySurfaceRequest"
+                "type": "object",
+                "properties": {
+                  "rate": {
+                    "type": "number",
+                    "description": "Shared continuous risk-free / discount rate r for the book (e.g. 0.05 = 5%).",
+                    "examples": [
+                      0.03,
+                      0.05
+                    ]
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "description": "Shared continuous yield q (default 0): equity dividends, FX foreign rate, or commodity convenience yield as appropriate.",
+                    "minimum": 0,
+                    "examples": [
+                      0,
+                      0.01
+                    ]
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "default": "european",
+                    "description": "Exercise style for IV solve (default \"european\")."
+                  },
+                  "forwardStart": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Shared ISO-8601 window start for all rows (optional)."
+                  },
+                  "expiration": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Shared ISO-8601 window end for all rows. When set, all rows share derived τ."
+                  },
+                  "treeSteps": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 500,
+                    "description": "CRR steps when optionStyle is american."
+                  },
+                  "options": {
+                    "type": "array",
+                    "description": "Market quotes: one object per (underlying, strike, maturity, type) with observed premium. Prefer unique keys per cell; duplicates average into the grid.",
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "items": {
+                      "type": "object",
+                      "title": "MarketOptionQuote",
+                      "properties": {
+                        "underlying": {
+                          "type": "number",
+                          "description": "Underlying level S for this quote (> 0). May differ by maturity (e.g. monthly power/gas forwards).",
+                          "exclusiveMinimum": 0,
+                          "examples": [
+                            100,
+                            82.5
+                          ]
+                        },
+                        "strike": {
+                          "type": "number",
+                          "description": "Strike K (> 0) in same units as underlying.",
+                          "exclusiveMinimum": 0
+                        },
+                        "timeToExpiry": {
+                          "type": "number",
+                          "description": "Year-fraction to expiry T (≥ 0).",
+                          "minimum": 0,
+                          "examples": [
+                            0.25,
+                            0.5,
+                            1
+                          ]
+                        },
+                        "optionType": {
+                          "type": "string",
+                          "enum": [
+                            "call",
+                            "put"
+                          ],
+                          "description": "European call or put."
+                        },
+                        "premium": {
+                          "type": "number",
+                          "description": "Observed market premium (≥ 0) in underlying currency units.",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "underlying",
+                        "strike",
+                        "timeToExpiry",
+                        "optionType",
+                        "premium"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "rate",
+                  "options"
+                ],
+                "additionalProperties": false,
+                "title": "ImpliedVolatilitySurfaceRequest",
+                "description": "Build an IV surface from a market option book. Share funding rate and yield; attach each quote's own underlying (supports different forward marks by maturity — common in power, gas, and commodity curves)."
               },
               "example": {
                 "rate": 0.05,
@@ -843,7 +1163,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.10",
+          "currency": "USDC"
+        }
       }
     },
     "/v1/portfolio/greeks": {
@@ -871,7 +1199,84 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PortfolioGreeksRequest"
+                "type": "object",
+                "properties": {
+                  "rate": {
+                    "type": "number"
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "includeDollarGreeks": {
+                    "type": "boolean",
+                    "description": "If true, include cash delta/gamma and per-point vega/theta/rho scalings"
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "default": "european",
+                    "description": "Exercise style (default \"european\")."
+                  },
+                  "positions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "underlying": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Underlying S for this leg"
+                        },
+                        "strike": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "timeToExpiry": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "optionType": {
+                          "type": "string",
+                          "enum": [
+                            "call",
+                            "put"
+                          ]
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "description": "Position size; >0 long, <0 short; must be non-zero"
+                        },
+                        "volatility": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Annualized vol σ for this leg"
+                        }
+                      },
+                      "required": [
+                        "underlying",
+                        "strike",
+                        "timeToExpiry",
+                        "optionType",
+                        "quantity",
+                        "volatility"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "rate",
+                  "positions"
+                ],
+                "additionalProperties": false,
+                "title": "PortfolioGreeksRequest",
+                "description": "Aggregate net Greeks and MTM for a multi-leg European option book."
               },
               "example": {
                 "rate": 0.05,
@@ -1013,7 +1418,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.15",
+          "currency": "USDC"
+        }
       }
     },
     "/v1/portfolio/scenario": {
@@ -1041,7 +1454,107 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PortfolioScenarioRequest"
+                "type": "object",
+                "properties": {
+                  "rate": {
+                    "type": "number"
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "default": "european",
+                    "description": "Exercise style (default \"european\")."
+                  },
+                  "positions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "underlying": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Underlying S for this leg"
+                        },
+                        "strike": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "timeToExpiry": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "optionType": {
+                          "type": "string",
+                          "enum": [
+                            "call",
+                            "put"
+                          ]
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "description": "Position size; >0 long, <0 short; must be non-zero"
+                        },
+                        "volatility": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Annualized vol σ for this leg"
+                        }
+                      },
+                      "required": [
+                        "underlying",
+                        "strike",
+                        "timeToExpiry",
+                        "optionType",
+                        "quantity",
+                        "volatility"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "scenarios": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "spotShock": {
+                          "type": "number",
+                          "description": "Relative spot move; newS = S*(1+spotShock)"
+                        },
+                        "volShock": {
+                          "type": "number",
+                          "description": "Relative vol move; newσ = σ*(1+volShock)"
+                        },
+                        "timeDecayDays": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Calendar days of time decay; T reduced by days/365"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "rate",
+                  "positions",
+                  "scenarios"
+                ],
+                "additionalProperties": false,
+                "title": "PortfolioScenarioRequest",
+                "description": "Reprice a portfolio under relative spot/vol shocks and calendar time decay."
               },
               "example": {
                 "rate": 0.05,
@@ -1188,7 +1701,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.25",
+          "currency": "USDC"
+        }
       }
     },
     "/v1/option/price-from-surface": {
@@ -1217,7 +1738,55 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PriceFromSurfaceRequest"
+                "type": "object",
+                "properties": {
+                  "surfaceConvention": {
+                    "type": "string",
+                    "const": "log_moneyness_forward"
+                  },
+                  "interpolation": {
+                    "type": "string",
+                    "const": "total_variance_bilinear"
+                  },
+                  "wingRule": {
+                    "type": "string",
+                    "const": "flat_vol"
+                  },
+                  "rate": {
+                    "type": "number"
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "default": "european"
+                  },
+                  "surface": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200
+                  },
+                  "options": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50
+                  }
+                },
+                "required": [
+                  "surfaceConvention",
+                  "rate",
+                  "surface",
+                  "options"
+                ],
+                "additionalProperties": false,
+                "title": "PriceFromSurfaceRequest",
+                "description": "Price European options on a submitted IV surface via total-variance bilinear interpolation in log-moneyness k=ln(K/F)."
               },
               "examples": {
                 "equitySmile": {
@@ -1344,6 +1913,69 @@
                     ]
                   }
                 }
+              },
+              "example": {
+                "surfaceConvention": "log_moneyness_forward",
+                "interpolation": "total_variance_bilinear",
+                "wingRule": "flat_vol",
+                "rate": 0.05,
+                "dividendYield": 0,
+                "surface": [
+                  {
+                    "k": -0.1,
+                    "timeToExpiry": 0.25,
+                    "iv": 0.22
+                  },
+                  {
+                    "k": 0,
+                    "timeToExpiry": 0.25,
+                    "iv": 0.2
+                  },
+                  {
+                    "k": 0.1,
+                    "timeToExpiry": 0.25,
+                    "iv": 0.23
+                  },
+                  {
+                    "k": -0.1,
+                    "timeToExpiry": 0.5,
+                    "iv": 0.21
+                  },
+                  {
+                    "k": 0,
+                    "timeToExpiry": 0.5,
+                    "iv": 0.2
+                  },
+                  {
+                    "k": 0.1,
+                    "timeToExpiry": 0.5,
+                    "iv": 0.22
+                  },
+                  {
+                    "k": -0.1,
+                    "timeToExpiry": 1,
+                    "iv": 0.205
+                  },
+                  {
+                    "k": 0,
+                    "timeToExpiry": 1,
+                    "iv": 0.2
+                  },
+                  {
+                    "k": 0.1,
+                    "timeToExpiry": 1,
+                    "iv": 0.215
+                  }
+                ],
+                "options": [
+                  {
+                    "underlying": 100,
+                    "strike": 100,
+                    "timeToExpiry": 1,
+                    "optionType": "call",
+                    "quantity": 1
+                  }
+                ]
               }
             }
           }
@@ -1456,7 +2088,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.08",
+          "currency": "USDC"
+        }
       }
     },
     "/v1/option/scenario-from-surface": {
@@ -1486,7 +2126,72 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ScenarioFromSurfaceRequest"
+                "type": "object",
+                "properties": {
+                  "surfaceConvention": {
+                    "type": "string",
+                    "const": "log_moneyness_forward"
+                  },
+                  "interpolation": {
+                    "type": "string",
+                    "const": "total_variance_bilinear"
+                  },
+                  "wingRule": {
+                    "type": "string",
+                    "const": "flat_vol"
+                  },
+                  "rate": {
+                    "type": "number"
+                  },
+                  "dividendYield": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "optionStyle": {
+                    "type": "string",
+                    "enum": [
+                      "european",
+                      "american"
+                    ],
+                    "default": "european"
+                  },
+                  "surface": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200
+                  },
+                  "options": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50
+                  },
+                  "sticky": {
+                    "type": "string",
+                    "enum": [
+                      "moneyness",
+                      "strike",
+                      "fixed_vol"
+                    ]
+                  },
+                  "positions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50
+                  },
+                  "scenario": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "surfaceConvention",
+                  "rate",
+                  "surface",
+                  "positions",
+                  "scenario"
+                ],
+                "additionalProperties": false,
+                "title": "ScenarioFromSurfaceRequest",
+                "description": "Revalue a book on an IV surface under sticky moneyness/strike/fixed_vol with optional F, rate, time, and vol shocks (incl. smileTwist)."
               },
               "example": {
                 "surfaceConvention": "log_moneyness_forward",
@@ -1700,7 +2405,15 @@
           {
             "x402": []
           }
-        ]
+        ],
+        "x-payment-info": {
+          "protocols": [
+            "x402"
+          ],
+          "pricingMode": "fixed",
+          "price": "$0.15",
+          "currency": "USDC"
+        }
       }
     }
   },

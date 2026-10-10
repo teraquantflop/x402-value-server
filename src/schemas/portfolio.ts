@@ -163,6 +163,12 @@ export const portfolioGreeksInputJsonSchema = {
       description:
         "If true, include cash delta/gamma and per-point vega/theta/rho scalings",
     },
+    optionStyle: {
+      type: "string",
+      enum: ["european", "american"],
+      default: "european",
+      description: 'Exercise style (default "european").',
+    },
     positions: {
       type: "array",
       minItems: 1,
@@ -182,6 +188,12 @@ export const portfolioScenarioInputJsonSchema = {
   properties: {
     rate: { type: "number" },
     dividendYield: { type: "number", minimum: 0 },
+    optionStyle: {
+      type: "string",
+      enum: ["european", "american"],
+      default: "european",
+      description: 'Exercise style (default "european").',
+    },
     positions: {
       type: "array",
       minItems: 1,
