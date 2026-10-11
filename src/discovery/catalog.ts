@@ -120,6 +120,14 @@ export function clampTags(tags: string[]): string[] {
     .slice(0, 5);
 }
 
+/**
+ * Absolute icon URL for PayAI resource.iconUrl (http/https only).
+ * Uses PUBLIC_BASE_URL — never invent a host.
+ */
+export function bazaarIconUrl(config: AppConfig): string {
+  return `${config.publicBaseUrl.replace(/\/$/, "")}/favicon.ico`;
+}
+
 export function optionPriceDiscovery(config: AppConfig) {
   const chain = chainHint(config);
   // ≤500 chars — lead with when-to-use for Bazaar agents
@@ -133,13 +141,14 @@ export function optionPriceDiscovery(config: AppConfig) {
     serviceName: "BSM Price+Greeks",
     description: description.slice(0, 500),
     tags: clampTags([
-      "mark",
-      "hedge_greeks",
+      "options",
+      "black-scholes",
+      "greeks",
       settlementTag(config),
       "usdc",
-      "options",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "Have S/K/T/r/σ (or a power forward mark as S) and need price + Greeks. Prefer this over surface when you are not inverting market premiums.",
@@ -165,13 +174,14 @@ export function impliedVolDiscovery(config: AppConfig) {
     serviceName: "Single IV Solver",
     description: description.slice(0, 500),
     tags: clampTags([
-      "iv_calib",
-      "mark",
+      "options",
+      "black-scholes",
+      "volatility",
       settlementTag(config),
       "usdc",
-      "options",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "One premium to mark or hedge. Use /v1/volatility/surface instead for books and multi-maturity power/commodity grids.",
@@ -195,13 +205,14 @@ export function volatilitySurfaceDiscovery(config: AppConfig) {
     serviceName: "IV Surface Desk",
     description: description.slice(0, 500),
     tags: clampTags([
-      "iv_calib",
-      "mark",
+      "volatility",
+      "surface",
+      "options",
       settlementTag(config),
       "usdc",
-      "volatility",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "Multi-strike/multi-maturity premiums (e.g. power stack or commodity curve). Use price_option / /v1/option/price when σ is already known.",
@@ -224,13 +235,14 @@ export function portfolioGreeksDiscovery(config: AppConfig) {
     serviceName: "Portfolio Net Greeks",
     description: description.slice(0, 500),
     tags: clampTags([
-      "book_risk",
-      "hedge_greeks",
+      "portfolio",
+      "greeks",
+      "options",
       settlementTag(config),
       "usdc",
-      "portfolio",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "Aggregate delta/gamma/vega/theta/rho across a multi-leg book. Use scenario for shocked MTM.",
@@ -253,13 +265,14 @@ export function portfolioScenarioDiscovery(config: AppConfig) {
     serviceName: "Portfolio Scenarios",
     description: description.slice(0, 500),
     tags: clampTags([
+      "portfolio",
       "scenario",
-      "book_risk",
+      "greeks",
       settlementTag(config),
       "usdc",
-      "portfolio",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "Need shocked MTM and Greeks (spotShock, volShock, timeDecayDays). Use portfolio/greeks for base risk only.",
@@ -283,13 +296,14 @@ export function priceFromSurfaceDiscovery(config: AppConfig) {
     serviceName: "Price From Surface",
     description: description.slice(0, 500),
     tags: clampTags([
-      "mark",
-      "hedge_greeks",
+      "surface",
+      "options",
+      "greeks",
       settlementTag(config),
       "usdc",
-      "smile",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "Have a smile/surface grid and want European prices + Greeks at interpolated σ. Use scalar /v1/option/price if you already know one σ.",
@@ -314,13 +328,14 @@ export function scenarioFromSurfaceDiscovery(config: AppConfig) {
     serviceName: "Surface Scenarios",
     description: description.slice(0, 500),
     tags: clampTags([
+      "surface",
       "scenario",
-      "mark",
+      "options",
       settlementTag(config),
       "usdc",
-      "smile",
     ]),
     mimeType: "application/json" as const,
+    iconUrl: bazaarIconUrl(config),
     agentHints: {
       whenToCall:
         "Need base vs scenario MTM on a smile with sticky conventions. Use price-from-surface for static pricing only.",
@@ -578,6 +593,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.priceDollarString,
           mimeType: "application/json",
           tags: optionMeta.tags,
+          iconUrl: optionMeta.iconUrl,
           agentHints: optionMeta.agentHints,
         },
         {
@@ -588,6 +604,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.priceImpliedVolDollarString,
           mimeType: "application/json",
           tags: ivMeta.tags,
+          iconUrl: ivMeta.iconUrl,
           agentHints: ivMeta.agentHints,
         },
         {
@@ -598,6 +615,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.priceVolSurfaceDollarString,
           mimeType: "application/json",
           tags: surfaceMeta.tags,
+          iconUrl: surfaceMeta.iconUrl,
           agentHints: surfaceMeta.agentHints,
         },
         {
@@ -608,6 +626,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.pricePortfolioGreeksDollarString,
           mimeType: "application/json",
           tags: portfolioMeta.tags,
+          iconUrl: portfolioMeta.iconUrl,
           agentHints: portfolioMeta.agentHints,
         },
         {
@@ -618,6 +637,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.pricePortfolioScenarioDollarString,
           mimeType: "application/json",
           tags: scenarioMeta.tags,
+          iconUrl: scenarioMeta.iconUrl,
           agentHints: scenarioMeta.agentHints,
         },
         {
@@ -628,6 +648,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.priceOptionFromSurfaceDollarString,
           mimeType: "application/json",
           tags: priceSurfMeta.tags,
+          iconUrl: priceSurfMeta.iconUrl,
           agentHints: priceSurfMeta.agentHints,
         },
         {
@@ -638,6 +659,7 @@ export function buildServiceCard(config: AppConfig) {
           price: config.priceScenarioFromSurfaceDollarString,
           mimeType: "application/json",
           tags: scenSurfMeta.tags,
+          iconUrl: scenSurfMeta.iconUrl,
           agentHints: scenSurfMeta.agentHints,
         },
       ],

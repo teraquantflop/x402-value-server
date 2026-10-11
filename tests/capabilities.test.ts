@@ -38,20 +38,21 @@ describe("buildCapabilities", () => {
   });
 });
 
-describe("Bazaar job tags", () => {
-  it("uses mark/hedge_greeks/iv_calib/book_risk/scenario", () => {
+describe("Bazaar discovery tags", () => {
+  it("uses topical PayAI tags (options/black-scholes/greeks/surface/…)", () => {
     expect(optionPriceDiscovery(config).tags).toEqual(
-      expect.arrayContaining(["mark", "hedge_greeks"]),
+      expect.arrayContaining(["options", "black-scholes", "greeks"]),
     );
     expect(volatilitySurfaceDiscovery(config).tags).toEqual(
-      expect.arrayContaining(["iv_calib"]),
+      expect.arrayContaining(["volatility", "surface", "options"]),
     );
     expect(portfolioGreeksDiscovery(config).tags).toEqual(
-      expect.arrayContaining(["book_risk"]),
+      expect.arrayContaining(["portfolio", "greeks", "options"]),
     );
     expect(portfolioScenarioDiscovery(config).tags).toEqual(
-      expect.arrayContaining(["scenario"]),
+      expect.arrayContaining(["portfolio", "scenario", "greeks"]),
     );
+    expect(optionPriceDiscovery(config).iconUrl).toMatch(/\/favicon\.ico$/);
   });
 });
 

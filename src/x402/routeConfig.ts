@@ -195,6 +195,7 @@ export function buildPaidRoutes(
       mimeType: optionMeta.mimeType,
       serviceName: optionMeta.serviceName,
       tags: optionMeta.tags,
+      iconUrl: optionMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: OPTION_EXAMPLE_INPUT,
@@ -211,6 +212,7 @@ export function buildPaidRoutes(
       mimeType: ivMeta.mimeType,
       serviceName: ivMeta.serviceName,
       tags: ivMeta.tags,
+      iconUrl: ivMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: IMPLIED_VOL_EXAMPLE_INPUT,
@@ -227,6 +229,7 @@ export function buildPaidRoutes(
       mimeType: surfaceMeta.mimeType,
       serviceName: surfaceMeta.serviceName,
       tags: surfaceMeta.tags,
+      iconUrl: surfaceMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: VOL_SURFACE_EXAMPLE_INPUT,
@@ -246,6 +249,7 @@ export function buildPaidRoutes(
       mimeType: portfolioMeta.mimeType,
       serviceName: portfolioMeta.serviceName,
       tags: portfolioMeta.tags,
+      iconUrl: portfolioMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: PORTFOLIO_GREEKS_EXAMPLE_INPUT,
@@ -265,6 +269,7 @@ export function buildPaidRoutes(
       mimeType: scenarioMeta.mimeType,
       serviceName: scenarioMeta.serviceName,
       tags: scenarioMeta.tags,
+      iconUrl: scenarioMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: PORTFOLIO_SCENARIO_EXAMPLE_INPUT,
@@ -284,6 +289,7 @@ export function buildPaidRoutes(
       mimeType: priceSurfMeta.mimeType,
       serviceName: priceSurfMeta.serviceName,
       tags: priceSurfMeta.tags,
+      iconUrl: priceSurfMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: SURFACE_PRICE_EXAMPLE_INPUT,
@@ -303,6 +309,7 @@ export function buildPaidRoutes(
       mimeType: scenSurfMeta.mimeType,
       serviceName: scenSurfMeta.serviceName,
       tags: scenSurfMeta.tags,
+      iconUrl: scenSurfMeta.iconUrl,
       extensions: {
         ...bodyDiscovery({
           input: SURFACE_SCENARIO_EXAMPLE_INPUT,

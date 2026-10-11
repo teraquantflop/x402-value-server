@@ -1,8 +1,8 @@
 /**
- * Every paid x402 route must declare stock extensions.bazaar HTTP envelope:
- * info.input.type === "http", bodyType === "json", body = request example;
- * schema.properties.input.properties.body = request-body JSON Schema.
- * Paid set is discovered via unpaid POST → 402 + PAYMENT-REQUIRED.
+ * PayAI Bazaar discovery compliance (x402 v2):
+ * every paid route’s unpaid 402 must include extensions.bazaar (HTTP envelope)
+ * plus resource.{description,serviceName,tags,mimeType,iconUrl}.
+ * Paid set discovered via unpaid POST → 402 + PAYMENT-REQUIRED.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
@@ -37,9 +37,7 @@ function decodePaymentRequired(header: string): Record<string, unknown> | null {
   }
 }
 
-function extractBazaar(
-  payload: Record<string, unknown> | null,
-): {
+type BazaarBlob = {
   info?: {
     input?: {
       type?: string;
@@ -56,21 +54,31 @@ function extractBazaar(
       input?: {
         required?: string[];
         properties?: {
-          type?: unknown;
-          method?: unknown;
-          bodyType?: unknown;
           body?: { properties?: Record<string, unknown> };
         };
       };
     };
   };
-} | null {
+};
+
+type ResourceBlob = {
+  url?: string;
+  description?: string;
+  mimeType?: string;
+  serviceName?: string;
+  tags?: string[];
+  iconUrl?: string;
+};
+
+function extractBazaar(
+  payload: Record<string, unknown> | null,
+): BazaarBlob | null {
   if (!payload) return null;
   const extensions = payload.extensions as
     | Record<string, unknown>
     | undefined;
   if (extensions?.bazaar && typeof extensions.bazaar === "object") {
-    return extensions.bazaar as NonNullable<ReturnType<typeof extractBazaar>>;
+    return extensions.bazaar as BazaarBlob;
   }
   const accepts = payload.accepts;
   if (Array.isArray(accepts)) {
@@ -78,9 +86,7 @@ function extractBazaar(
       if (!a || typeof a !== "object") continue;
       const ext = (a as { extensions?: { bazaar?: unknown } }).extensions
         ?.bazaar;
-      if (ext && typeof ext === "object") {
-        return ext as NonNullable<ReturnType<typeof extractBazaar>>;
-      }
+      if (ext && typeof ext === "object") return ext as BazaarBlob;
     }
   }
   return null;
@@ -95,9 +101,10 @@ async function listen(app: Express): Promise<{ server: Server; baseUrl: string }
   return { server, baseUrl: `http://127.0.0.1:${addr.port}` };
 }
 
-describe("paid routes: 402 extensions.bazaar HTTP envelope", () => {
+describe("paid routes: PayAI Bazaar discovery compliance", () => {
   let server: Server;
   let baseUrl: string;
+  let publicBaseUrl: string;
   /** Paths confirmed paid by unpaid POST → 402 + PAYMENT-REQUIRED. */
   let paidPaths: string[] = [];
 
@@ -109,13 +116,14 @@ describe("paid routes: 402 extensions.bazaar HTTP envelope", () => {
     process.env.PAY_TO_ADDRESS = SOLANA_PAYTO;
     process.env.PAY_TO_SVM_ADDRESS = SOLANA_PAYTO;
     process.env.FACILITATOR_URL = "https://facilitator.payai.network";
-    process.env.PUBLIC_BASE_URL = "http://localhost:4021";
+    process.env.PUBLIC_BASE_URL = "https://derivatives-pricer-production.up.railway.app";
     process.env.FREE_TIER_N = "0";
     process.env.MCP_ENABLED = "0";
     delete process.env.CONTACT_EMAIL;
 
     const { createApp } = await import("../src/app.js");
     const { config } = await import("../src/config.js");
+    publicBaseUrl = config.publicBaseUrl.replace(/\/$/, "");
     const candidates = paidPostPaths(
       buildPaidRoutes(config, { cdpEnabled: false }),
     );
@@ -157,7 +165,7 @@ describe("paid routes: 402 extensions.bazaar HTTP envelope", () => {
     expect(paidPaths).toEqual(expected);
   });
 
-  it("every paid path returns stock bazaar HTTP envelope with body schema", async () => {
+  it("every paid path has resource metadata + stock bazaar envelope", async () => {
     for (const path of paidPaths) {
       const res = await fetch(`${baseUrl}${path}`, {
         method: "POST",
@@ -168,6 +176,42 @@ describe("paid routes: 402 extensions.bazaar HTTP envelope", () => {
       const hdr = paymentRequiredHeader(res);
       expect(hdr, `${path} PAYMENT-REQUIRED`).toBeTruthy();
       const decoded = decodePaymentRequired(hdr!);
+      expect(decoded, `${path} decoded challenge`).toBeTruthy();
+
+      const resource = (decoded!.resource ?? null) as ResourceBlob | null;
+      expect(resource, `${path} resource`).toBeTruthy();
+      expect(
+        typeof resource!.description === "string" &&
+          resource!.description.length > 0,
+        `${path} resource.description`,
+      ).toBe(true);
+      expect(resource!.description!.length, `${path} description ≤500`).toBeLessThanOrEqual(
+        500,
+      );
+      expect(
+        typeof resource!.serviceName === "string" &&
+          resource!.serviceName.length > 0 &&
+          resource!.serviceName.length <= 32,
+        `${path} resource.serviceName`,
+      ).toBe(true);
+      expect(resource!.mimeType, `${path} mimeType`).toBe("application/json");
+      expect(Array.isArray(resource!.tags), `${path} tags array`).toBe(true);
+      expect(resource!.tags!.length, `${path} tags 1–5`).toBeGreaterThanOrEqual(1);
+      expect(resource!.tags!.length, `${path} tags ≤5`).toBeLessThanOrEqual(5);
+      for (const t of resource!.tags!) {
+        expect(t.length, `${path} tag length`).toBeLessThanOrEqual(32);
+        expect(/^[\x20-\x7E]+$/.test(t), `${path} tag printable ASCII`).toBe(
+          true,
+        );
+      }
+      expect(resource!.iconUrl, `${path} resource.iconUrl`).toBe(
+        `${publicBaseUrl}/favicon.ico`,
+      );
+      expect(
+        /^https?:\/\//.test(resource!.iconUrl!),
+        `${path} iconUrl absolute`,
+      ).toBe(true);
+
       const bazaar = extractBazaar(decoded);
       expect(bazaar, `${path} extensions.bazaar`).toBeTruthy();
 

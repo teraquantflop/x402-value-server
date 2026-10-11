@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "client": "tsx clients/test-client.ts",
+    "bootstrap:derivatives": "tsx clients/bootstrap-derivatives.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
